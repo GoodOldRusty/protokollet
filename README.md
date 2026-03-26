@@ -1,12 +1,13 @@
 # Meeting Recorder
 
-**Version:** 1.1.0
+**Version:** 1.2.0
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
-Records meetings via manual start/stop and transcribes using
-berget.ai's kb-whisper-large (Swedish-optimized). Runs as a Windows
-system tray application. No GPU required.
+Records meetings via manual start/stop, transcribes using berget.ai's
+kb-whisper-large (Swedish-optimized), and produces structured meeting
+notes with summary, decisions, and action items via LLM post-processing.
+Runs as a Windows system tray application. No GPU required.
 
 ---
 
@@ -19,15 +20,17 @@ system tray application. No GPU required.
    .venv\Scripts\activate
    pip install -r requirements.txt
    ```
-3. Create a `.env` file with your berget.ai API key:
+3. Create a `.env` file with your berget.ai API keys:
    ```
-   BERGET_API_KEY=your-api-key-here
+   BERGET_API_KEY=your-whisper-api-key
+   BERGET_API_KEY2=your-llm-api-key
    ```
-4. Double-click `run.bat` (or run `python tray.py`)
+   If you use the same key for both, just set `BERGET_API_KEY`.
+4. Double-click `Recorder.bat` (or run `python tray.py`)
 5. Right-click the tray icon and click **Start Recording** when your
    meeting begins
 6. Click **Stop Recording** when it ends
-7. Transcripts are saved to `~/Recordings/<timestamp>/transcript.txt`
+7. Meeting notes are saved to `~/Recordings/<timestamp>/transcript.md`
 
 ## How It Works
 
@@ -37,12 +40,32 @@ system tray application. No GPU required.
    - **System loopback** (other participants via WASAPI)
 3. **Stop** — Click "Stop Recording" when the meeting ends.
 4. **Transcription** — Each stream is sent to berget.ai's API
-   (kb-whisper-large) for transcription. Mic audio is labeled "Me",
-   loopback is labeled "Others".
-5. **Output** — A speaker-labeled transcript:
-   ```
-   Others: Welcome everyone, let's get started.
-   Me: Hi, thanks for setting this up.
+   (kb-whisper-large) for transcription. Mic audio is labeled with
+   your name (configurable), loopback is labeled "Others".
+5. **LLM Summary** — The raw transcript is processed by Mistral to
+   produce structured meeting notes.
+6. **Output** — A markdown file with:
+
+   ```markdown
+   # Mötesprotokoll 2026-03-26 14:30
+
+   ## Sammanfattning
+   Brief meeting summary...
+
+   ## Beslut
+   - Key decisions made
+
+   ## Åtgärdspunkter
+   - Action items with owners
+
+   ## Mötesanteckningar
+   Cleaned-up prose version of the conversation...
+
+   ---
+
+   ## Rå transkribering
+   Jan: original transcribed text...
+   Others: original transcribed text...
    ```
 
 ### System Tray
@@ -68,6 +91,8 @@ Edit `config.json` (created automatically on first run):
 | Key              | Default                      | Description                          |
 | ---------------- | ---------------------------- | ------------------------------------ |
 | `whisper_model`  | `"KBLab/kb-whisper-large"`   | Whisper model on berget.ai           |
+| `llm_model`      | `"mistralai/Mistral-Small-3.2-24B-Instruct-2506"` | LLM for summary |
+| `my_name`        | `"Me"`                       | Your name in the transcript          |
 | `language`       | `"sv"`                       | Transcription language               |
 | `keep_audio`     | `false`                      | Keep WAV files after transcription   |
 | `min_seconds`    | `30`                         | Discard recordings shorter than this |
@@ -81,28 +106,39 @@ The `prompt` field in `config.json` helps the model recognize
 domain-specific terms. Edit it to match your work context:
 
 ```json
-"prompt": "Power BI, SQL Server, SSIS, SSRS, SSAS, Git, Azure DevOps, DAX, T-SQL, ETL, Data Warehouse"
+"prompt": "Power BI, SQL Server, SSIS, SSRS, SSAS, Azure DevOps, DAX, T-SQL, ETL..."
 ```
 
-Add or remove terms as needed. No restart required — the config is
-read fresh each recording.
+Add or remove terms as needed. The Whisper prompt field is capped at
+224 tokens — the default list uses 213. No restart required — the
+config is read fresh each recording.
 
 ## Technical Notes
 
 - **Speaker identification** uses the two-stream approach (mic vs.
   loopback) rather than a diarization model. This means it distinguishes
-  "Me" from "Others" but does not identify individual remote
-  participants.
-- **WASAPI loopback** captures all system audio, not just Teams. If
-  other apps play audio during a call, it will be included in the
-  "Others" stream.
-- **API cost** is approximately 0.00005 EUR/second (~0.09 EUR for a
-  30 min meeting).
+  you from "Others" but does not identify individual remote participants.
+- **WASAPI loopback** captures all system audio, not just the meeting
+  app. If other apps play audio during a call, it will be included in
+  the "Others" stream.
+- **API cost** — transcription is ~0.00005 EUR/second (~0.09 EUR for
+  a 30 min meeting). LLM summary costs fractions of a cent per meeting.
 - Recordings under `min_seconds` are automatically discarded.
+- Two API keys are supported: `BERGET_API_KEY` for whisper,
+  `BERGET_API_KEY2` for the LLM (falls back to `BERGET_API_KEY` if
+  not set).
 
 ---
 
 ## Changelog
+
+### v1.2.0 (2026-03-26)
+- LLM post-processing: structured markdown output with summary,
+  decisions, action items, and cleaned-up meeting notes
+- Configurable speaker name (`my_name` in config)
+- Separate API key support for LLM endpoint (`BERGET_API_KEY2`)
+- Expanded domain vocabulary (213/224 Whisper tokens)
+- Renamed launcher to `Recorder.bat`
 
 ### v1.1.0 (2026-03-26)
 - Switch from local Whisper to berget.ai API (kb-whisper-large)
