@@ -1,5 +1,7 @@
 {
     "whisper_model": "KBLab/kb-whisper-large",
+    "llm_model": "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+    "my_name": "Me",
     "language": "sv",
     "keep_audio": false,
     "min_seconds": 30,

@@ -29,6 +29,7 @@ ENV_PATH = Path(__file__).parent / ".env"
 
 DEFAULTS = {
     "whisper_model": "KBLab/kb-whisper-large",
+    "llm_model": "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
     "language": "sv",
     "keep_audio": False,
     "min_seconds": 30,
@@ -174,14 +175,58 @@ def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict) -> str:
     return result.text.strip()
 
 
-def format_transcript(mic_text: str, lb_text: str) -> str:
+def format_raw_transcript(mic_text: str, lb_text: str, my_name: str = "Me") -> str:
     """Format mic and loopback transcriptions into labeled transcript."""
     lines = []
     if lb_text:
         lines.append(f"Others: {lb_text}")
     if mic_text:
-        lines.append(f"Me: {mic_text}")
+        lines.append(f"{my_name}: {mic_text}")
     return "\n\n".join(lines)
+
+
+SUMMARY_PROMPT = """\
+Du får en rå transkribering av ett möte. Transkriberingen kan innehålla \
+fel och upprepningar från tal-till-text.
+
+Skapa ett strukturerat mötesprotokoll i markdown med följande sektioner:
+
+## Sammanfattning
+En kort sammanfattning av mötet (2-4 meningar).
+
+## Beslut
+Lista viktiga beslut som fattades. Om inga beslut fattades, skriv "Inga beslut noterade."
+
+## Åtgärdspunkter
+Lista konkreta uppgifter som nämndes, med ansvarig person om det framgår. \
+Om inga åtgärdspunkter, skriv "Inga åtgärdspunkter noterade."
+
+## Mötesanteckningar
+En uppstädad version av samtalet i löpande text. Korrigera uppenbara \
+transkriptionsfel, ta bort upprepningar och fyllnadsord, men behåll \
+innebörden. Ange vem som sa vad (Me/Others) där det är tydligt.
+
+Skriv allt på svenska."""
+
+
+def get_llm_client(cfg: dict) -> OpenAI:
+    """Get a separate OpenAI client for LLM, using BERGET_API_KEY2 if available."""
+    api_key = os.environ.get("BERGET_API_KEY2") or os.environ.get("BERGET_API_KEY", "")
+    return OpenAI(api_key=api_key, base_url=cfg["api_base_url"])
+
+
+def summarize_transcript(raw_transcript: str, cfg: dict) -> str:
+    """Post-process raw transcript with LLM to produce structured markdown."""
+    llm_client = get_llm_client(cfg)
+    response = llm_client.chat.completions.create(
+        model=cfg["llm_model"],
+        messages=[
+            {"role": "system", "content": SUMMARY_PROMPT},
+            {"role": "user", "content": raw_transcript},
+        ],
+        temperature=0.3,
+    )
+    return response.choices[0].message.content.strip()
 
 # ── State ─────────────────────────────────────────────────────
 
@@ -220,7 +265,7 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
     folder.mkdir(parents=True, exist_ok=True)
     mic_wav = folder / "mic.wav"
     lb_wav = folder / "loopback.wav"
-    txt_path = folder / "transcript.txt"
+    md_path = folder / "transcript.md"
 
     try:
         loopback = get_loopback_device(p)
@@ -293,10 +338,16 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
     else:
         log.info("Loopback stream empty - skipping transcription")
 
-    transcript = format_transcript(mic_text, lb_text)
+    my_name = cfg.get("my_name", "Me")
+    raw_transcript = format_raw_transcript(mic_text, lb_text, my_name)
 
-    txt_path.write_text(transcript, encoding="utf-8")
-    log.info("Transcript saved: %s", txt_path)
+    log.info("Summarizing with LLM...")
+    ts_label = datetime.now().strftime("%Y-%m-%d %H:%M")
+    summary = summarize_transcript(raw_transcript, cfg)
+
+    md_content = f"# Mötesprotokoll {ts_label}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
+    md_path.write_text(md_content, encoding="utf-8")
+    log.info("Transcript saved: %s", md_path)
 
     if not cfg["keep_audio"]:
         mic_wav.unlink(missing_ok=True)
@@ -306,4 +357,4 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
     state.set(RecorderState.IDLE)
 
     if on_transcript:
-        on_transcript(str(txt_path))
+        on_transcript(str(md_path))
