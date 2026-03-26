@@ -127,13 +127,24 @@ def frames_to_wav(frames: list, rate: int, out_path: Path) -> float:
     arr = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
     arr /= 32768.0
 
+    if len(arr) == 0:
+        pcm = np.array([], dtype=np.int16)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(out_path), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(SAMPLERATE)
+            wf.writeframes(pcm.tobytes())
+        return 0.0
+
     if channels > 1:
         arr = arr.reshape(-1, channels).mean(axis=1)
 
-    if rate != SAMPLERATE:
+    if rate != SAMPLERATE and len(arr) > 0:
         from scipy.signal import resample
         n = int(len(arr) * SAMPLERATE / rate)
-        arr = resample(arr, n)
+        if n > 0:
+            arr = resample(arr, n)
 
     pcm = (np.clip(arr, -1.0, 1.0) * 32767).astype(np.int16)
 
@@ -269,8 +280,18 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
     state.set(RecorderState.TRANSCRIBING)
     log.info("Transcribing via API...")
 
-    mic_text = transcribe_stream(mic_wav, client, cfg)
-    lb_text = transcribe_stream(lb_wav, client, cfg)
+    mic_text = ""
+    lb_text = ""
+
+    if mic_duration > 0:
+        mic_text = transcribe_stream(mic_wav, client, cfg)
+    else:
+        log.info("Mic stream empty - skipping transcription")
+
+    if lb_duration > 0:
+        lb_text = transcribe_stream(lb_wav, client, cfg)
+    else:
+        log.info("Loopback stream empty - skipping transcription")
 
     transcript = format_transcript(mic_text, lb_text)
 
