@@ -17,4 +17,4 @@ if not exist "config.json" (
     )
 )
 
-pythonw tray.py
+start "" pythonw tray.py
