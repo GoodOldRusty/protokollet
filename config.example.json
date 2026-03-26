@@ -1,0 +1,8 @@
+{
+    "whisper_model": "large-v3",
+    "language": "sv",
+    "keep_audio": false,
+    "poll_seconds": 5,
+    "min_seconds": 30,
+    "output_dir": "~/Recordings"
+}
