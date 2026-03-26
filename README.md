@@ -12,10 +12,7 @@ Windows system tray application.
 
 ## Quick Start
 
-1. Install Python 3.10+ and ffmpeg:
-   ```
-   winget install ffmpeg
-   ```
+1. Install Python 3.10+
 2. Install dependencies:
    ```
    pip install -r requirements.txt

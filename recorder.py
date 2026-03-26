@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
 Meeting Recorder
-Auto-detects Teams calls via Windows audio session.
-Records loopback + mic separately, transcribes with Whisper,
-produces timestamped speaker-labeled transcript.
-Runs as a Windows system tray application.
+Records loopback + mic separately, transcribes via berget.ai API
+(kb-whisper-large), produces speaker-labeled transcript.
+Manual start/stop via system tray.
 """
 
 import json
+import os
 import shutil
-import sys
-import time
 import wave
 import threading
 import logging
@@ -19,8 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pyaudiowpatch as pyaudio
-import whisper
-from pycaw.pycaw import AudioUtilities
+from openai import OpenAI
 
 log = logging.getLogger("recorder")
 
@@ -28,19 +25,35 @@ log = logging.getLogger("recorder")
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 EXAMPLE_CONFIG_PATH = Path(__file__).parent / "config.example.json"
+ENV_PATH = Path(__file__).parent / ".env"
 
 DEFAULTS = {
-    "whisper_model": "large-v3",
+    "whisper_model": "KBLab/kb-whisper-large",
     "language": "sv",
     "keep_audio": False,
-    "poll_seconds": 5,
     "min_seconds": 30,
     "output_dir": "~/Recordings",
+    "api_base_url": "https://api.berget.ai/v1",
 }
+
+
+def load_env():
+    """Load .env file into environment variables."""
+    if not ENV_PATH.exists():
+        return
+    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip())
 
 
 def load_config() -> dict:
     """Load config.json, creating from example if missing."""
+    load_env()
+
     if not CONFIG_PATH.exists():
         if EXAMPLE_CONFIG_PATH.exists():
             shutil.copy(EXAMPLE_CONFIG_PATH, CONFIG_PATH)
@@ -62,19 +75,6 @@ SAMPLERATE = 16000
 CHANNELS = 1
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
-
-# ── Teams detection ───────────────────────────────────────────
-
-
-def is_teams_in_call() -> bool:
-    """True if Teams process has an active Windows audio session."""
-    try:
-        for session in AudioUtilities.GetAllSessions():
-            if session.Process and "teams" in session.Process.name().lower():
-                return True
-    except Exception:
-        pass
-    return False
 
 # ── Audio devices ─────────────────────────────────────────────
 
@@ -100,9 +100,10 @@ def record_device(
     frames: list,
     stop_event: threading.Event,
 ):
-    """Record from device into frames[] until stop_event is set."""
+    """Record from device into frames[] until stop_event is set.
+    Stores channel count as first element for downmix."""
     rate = int(device_info["defaultSampleRate"])
-    channels = min(CHANNELS, int(device_info["maxInputChannels"]))
+    channels = max(1, int(device_info["maxInputChannels"]))
     stream = p.open(
         format=FORMAT,
         channels=channels,
@@ -111,6 +112,7 @@ def record_device(
         input_device_index=int(device_info["index"]),
         frames_per_buffer=CHUNK,
     )
+    frames.append(channels)
     while not stop_event.is_set():
         data = stream.read(CHUNK, exception_on_overflow=False)
         frames.append(data)
@@ -120,9 +122,13 @@ def record_device(
 
 def frames_to_wav(frames: list, rate: int, out_path: Path) -> float:
     """Save raw frames as 16-bit mono WAV. Returns duration in seconds."""
-    raw = b"".join(frames)
+    channels = frames[0]
+    raw = b"".join(frames[1:])
     arr = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
     arr /= 32768.0
+
+    if channels > 1:
+        arr = arr.reshape(-1, channels).mean(axis=1)
 
     if rate != SAMPLERATE:
         from scipy.signal import resample
@@ -143,76 +149,30 @@ def frames_to_wav(frames: list, rate: int, out_path: Path) -> float:
 # ── Transcription ─────────────────────────────────────────────
 
 
-def transcribe_stream(wav_path: Path, model, language: str | None) -> list[dict]:
-    """
-    Transcribe a WAV file and return segments with timestamps.
-    Each segment: {"start": float, "end": float, "text": str}
-    """
-    result = model.transcribe(
-        str(wav_path),
-        language=language,
-        verbose=False,
-    )
-    segments = []
-    for seg in result.get("segments", []):
-        text = seg["text"].strip()
-        if text:
-            segments.append({
-                "start": seg["start"],
-                "end": seg["end"],
-                "text": text,
-            })
-    return segments
+def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict) -> str:
+    """Transcribe a WAV file via berget.ai API. Returns plain text."""
+    with open(wav_path, "rb") as f:
+        kwargs = {
+            "model": cfg["whisper_model"],
+            "file": f,
+            "language": cfg["language"],
+        }
+        if cfg.get("prompt"):
+            kwargs["prompt"] = cfg["prompt"]
+        result = client.audio.transcriptions.create(**kwargs)
+    return result.text.strip()
 
 
-def merge_segments(mic_segments: list[dict], lb_segments: list[dict],
-                   gap_threshold: float = 2.0) -> list[dict]:
-    """
-    Merge mic and loopback segments chronologically.
-    Label mic as 'Me', loopback as 'Others'.
-    Merge consecutive same-speaker segments if gap < gap_threshold.
-    """
-    tagged = []
-    for seg in mic_segments:
-        tagged.append({**seg, "speaker": "Me"})
-    for seg in lb_segments:
-        tagged.append({**seg, "speaker": "Others"})
-
-    tagged.sort(key=lambda s: s["start"])
-
-    if not tagged:
-        return []
-
-    merged = [tagged[0]]
-    for seg in tagged[1:]:
-        prev = merged[-1]
-        if (seg["speaker"] == prev["speaker"]
-                and seg["start"] - prev["end"] < gap_threshold):
-            prev["text"] += " " + seg["text"]
-            prev["end"] = seg["end"]
-        else:
-            merged.append(seg)
-
-    return merged
-
-
-def format_timestamp(seconds: float) -> str:
-    """Format seconds as [HH:MM:SS]."""
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    return f"[{h:02d}:{m:02d}:{s:02d}]"
-
-
-def format_transcript(segments: list[dict]) -> str:
-    """Format merged segments into readable transcript text."""
+def format_transcript(mic_text: str, lb_text: str) -> str:
+    """Format mic and loopback transcriptions into labeled transcript."""
     lines = []
-    for seg in segments:
-        ts = format_timestamp(seg["start"])
-        lines.append(f"{ts} {seg['speaker']}: {seg['text']}")
-    return "\n".join(lines)
+    if lb_text:
+        lines.append(f"Others: {lb_text}")
+    if mic_text:
+        lines.append(f"Me: {mic_text}")
+    return "\n\n".join(lines)
 
-# ── Meeting lifecycle ─────────────────────────────────────────
+# ── State ─────────────────────────────────────────────────────
 
 
 class RecorderState:
@@ -220,10 +180,9 @@ class RecorderState:
     IDLE = "idle"
     RECORDING = "recording"
     TRANSCRIBING = "transcribing"
-    LOADING = "loading"
 
     def __init__(self):
-        self.status = self.LOADING
+        self.status = self.IDLE
         self._listeners = []
 
     def set(self, status: str):
@@ -234,12 +193,16 @@ class RecorderState:
     def on_change(self, fn):
         self._listeners.append(fn)
 
+# ── Recording session ─────────────────────────────────────────
 
-def record_meeting(p: pyaudio.PyAudio, model, cfg: dict,
+
+def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
                    state: RecorderState,
-                   shutdown_event: threading.Event | None = None) -> str | None:
+                   stop_recording: threading.Event,
+                   on_transcript=None):
     """
-    Record a single meeting. Returns path to transcript or None.
+    Record until stop_recording is set. Transcribe and save.
+    Runs in a background thread.
     """
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     folder = cfg["output_dir"] / ts
@@ -252,13 +215,15 @@ def record_meeting(p: pyaudio.PyAudio, model, cfg: dict,
         loopback = get_loopback_device(p)
     except Exception as e:
         log.error("Could not get loopback device: %s", e)
-        return None
+        state.set(RecorderState.IDLE)
+        return
 
     try:
         mic = get_default_mic(p)
     except Exception as e:
         log.error("Could not get microphone: %s", e)
-        return None
+        state.set(RecorderState.IDLE)
+        return
 
     lb_frames, mic_frames = [], []
     stop = threading.Event()
@@ -275,14 +240,11 @@ def record_meeting(p: pyaudio.PyAudio, model, cfg: dict,
     )
 
     state.set(RecorderState.RECORDING)
-    log.info("[%s] Call detected - recording started", ts)
+    log.info("[%s] Recording started", ts)
     lb_thread.start()
     mic_thread.start()
 
-    while is_teams_in_call():
-        if shutdown_event and shutdown_event.is_set():
-            break
-        time.sleep(cfg["poll_seconds"])
+    stop_recording.wait()
 
     stop.set()
     lb_thread.join(timeout=5)
@@ -302,17 +264,15 @@ def record_meeting(p: pyaudio.PyAudio, model, cfg: dict,
         log.info("Under %ds - discarding.", cfg["min_seconds"])
         shutil.rmtree(folder)
         state.set(RecorderState.IDLE)
-        return None
+        return
 
     state.set(RecorderState.TRANSCRIBING)
-    log.info("Transcribing...")
+    log.info("Transcribing via API...")
 
-    lang = cfg["language"]
-    mic_segments = transcribe_stream(mic_wav, model, lang)
-    lb_segments = transcribe_stream(lb_wav, model, lang)
+    mic_text = transcribe_stream(mic_wav, client, cfg)
+    lb_text = transcribe_stream(lb_wav, client, cfg)
 
-    merged = merge_segments(mic_segments, lb_segments)
-    transcript = format_transcript(merged)
+    transcript = format_transcript(mic_text, lb_text)
 
     txt_path.write_text(transcript, encoding="utf-8")
     log.info("Transcript saved: %s", txt_path)
@@ -323,55 +283,6 @@ def record_meeting(p: pyaudio.PyAudio, model, cfg: dict,
         log.info("Audio files deleted.")
 
     state.set(RecorderState.IDLE)
-    return str(txt_path)
 
-# ── Main loop ─────────────────────────────────────────────────
-
-
-def monitor_loop(p: pyaudio.PyAudio, model, cfg: dict,
-                 state: RecorderState, stop_event: threading.Event,
-                 on_transcript=None):
-    """Poll for Teams calls. Runs in a thread."""
-    in_call = False
-    while not stop_event.is_set():
-        currently = is_teams_in_call()
-        if currently and not in_call:
-            in_call = True
-            result = record_meeting(p, model, cfg, state, stop_event)
-            if result and on_transcript:
-                on_transcript(result)
-            in_call = False
-        elif not currently:
-            in_call = False
-        stop_event.wait(cfg["poll_seconds"])
-
-
-def main():
-    """CLI entry point (no tray). Use tray.py for system tray."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s  %(message)s",
-        datefmt="%H:%M:%S",
-    )
-
-    cfg = load_config()
-    state = RecorderState()
-
-    log.info("Loading Whisper (%s)...", cfg["whisper_model"])
-    model = whisper.load_model(cfg["whisper_model"])
-    log.info("Model ready. Monitoring for Teams calls...")
-    state.set(RecorderState.IDLE)
-
-    p = pyaudio.PyAudio()
-    stop = threading.Event()
-    try:
-        monitor_loop(p, model, cfg, state, stop)
-    except KeyboardInterrupt:
-        log.info("Stopped.")
-        stop.set()
-    finally:
-        p.terminate()
-
-
-if __name__ == "__main__":
-    main()
+    if on_transcript:
+        on_transcript(str(txt_path))
