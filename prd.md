@@ -2,25 +2,27 @@
 
 ## Overview
 
-A Windows system tray application that automatically detects Microsoft
-Teams calls, records both sides of the conversation (mic + system audio),
-and produces a timestamped, speaker-labeled transcript using local
-Whisper inference. No data leaves the machine.
+A Windows system tray application that records meetings via manual
+start/stop, captures both sides of the conversation (mic + system audio),
+transcribes using berget.ai's kb-whisper-large (Swedish-optimized), and
+produces structured meeting notes with summary, decisions, and action
+items via LLM post-processing.
 
 ## Goals
 
-- Fully automatic: start the app, forget about it, find transcripts later
+- Manual start/stop: user controls when recording begins and ends
 - Speaker identification: distinguish "Me" (mic) from "Others" (loopback)
-- Timestamped output: know when each segment was spoken
+- Cloud transcription: fast, accurate Swedish transcription via berget.ai
+- LLM summary: structured meeting notes with decisions and action items
 - System tray: runs quietly in the background with minimal UI
-- Local only: no API calls, no cloud services, all processing on-device
+- No GPU required: all heavy processing happens server-side
 
 ## Non-goals
 
+- Automatic call detection (future consideration)
 - Support for apps other than Teams
-- Cloud-based transcription
 - Real-time transcription during calls
-- Summarization or post-processing with LLMs
+- Individual speaker identification among remote participants
 - Cross-platform support (Windows only)
 
 ---
@@ -30,120 +32,135 @@ Whisper inference. No data leaves the machine.
 ### FB1 — Project setup and config
 
 Set up the project structure with a `config.json` for all user-facing
-settings.
+settings. Environment variables for API keys via `.env` file.
 
 **Config file (`config.json`):**
 
-| Key              | Type   | Default       | Description                          |
-| ---------------- | ------ | ------------- | ------------------------------------ |
-| `whisper_model`  | string | `"large-v3"`  | Whisper model size                   |
-| `language`       | string | `"sv"`        | Transcription language (null=auto)   |
-| `keep_audio`     | bool   | `false`       | Keep WAV after transcription         |
-| `poll_seconds`   | int    | `5`           | How often to check for active call   |
-| `min_seconds`    | int    | `30`          | Discard recordings shorter than this |
-| `output_dir`     | string | `"~/Recordings"` | Where to save recordings          |
+| Key              | Type   | Default                                            | Description                          |
+| ---------------- | ------ | -------------------------------------------------- | ------------------------------------ |
+| `whisper_model`  | string | `"KBLab/kb-whisper-large"`                         | Whisper model on berget.ai           |
+| `llm_model`      | string | `"mistralai/Mistral-Small-3.2-24B-Instruct-2506"` | LLM for summary post-processing     |
+| `my_name`        | string | `"Me"`                                             | Your name in the transcript          |
+| `language`       | string | `"sv"`                                             | Transcription language               |
+| `keep_audio`     | bool   | `false`                                            | Keep WAV after transcription         |
+| `min_seconds`    | int    | `30`                                               | Discard recordings shorter than this |
+| `output_dir`     | string | `"~/Recordings"`                                   | Where to save recordings             |
+| `api_base_url`   | string | `"https://api.berget.ai/v1"`                       | API endpoint                         |
+| `prompt`         | string | *(domain terms)*                                   | Vocabulary hints for Whisper (max 224 tokens) |
+
+**Environment variables (`.env`):**
+
+| Key               | Description                                      |
+| ----------------- | ------------------------------------------------ |
+| `BERGET_API_KEY`  | API key for Whisper transcription                |
+| `BERGET_API_KEY2` | API key for LLM (falls back to `BERGET_API_KEY`) |
 
 Provide a `config.example.json` (committed) and `.gitignore` the real
 `config.json`. If `config.json` is missing at startup, copy from example.
 
 ### FB2 — Core recording engine
 
-Refactor the existing recording logic into clean, testable functions.
+Record mic and system audio as separate streams via manual start/stop.
 
-- Detect Teams calls via Windows audio sessions (pycaw)
-- Record loopback (system audio) and mic as **separate streams**
-- Keep streams separate through mixing — save as stereo WAV
-  (left = mic, right = loopback) or two mono files, whichever makes
-  diarization simpler in FB3
-- Poll for call end, then stop recording
+- Record loopback (system audio) via WASAPI and mic as **separate streams**
+- Downmix stereo loopback to mono, resample both streams to 16 kHz
+- Save as two separate mono WAV files (`mic.wav`, `loopback.wav`)
 - Discard recordings under `min_seconds`
 - Save to `output_dir/<YYYY-MM-DD_HH-MM>/`
+- Handle empty audio streams gracefully (skip transcription for empty streams)
 
-### FB3 — Transcription with speaker labels and timestamps
+### FB3 — Transcription via berget.ai API
 
-Transcribe using local Whisper. Leverage the two separate audio streams
-to identify speakers:
+Transcribe using berget.ai's OpenAI-compatible API with kb-whisper-large.
 
-- Transcribe each stream independently (mic = "Me", loopback = "Others")
-- Merge segments chronologically by timestamp
-- Output format in `transcript.txt`:
+- Send each WAV file to the API separately
+- Label mic stream with configurable `my_name`, loopback as "Others"
+- Support domain vocabulary hints via `prompt` config field
+- Output raw transcript with speaker labels (no timestamps)
+- Skip transcription for empty/silent streams
 
-```
-[00:00:12] Others: Welcome everyone, let's get started.
-[00:00:18] Me: Hi, thanks for setting this up.
-[00:00:25] Others: So the first item on the agenda...
-```
+### FB4 — LLM summary post-processing
 
-- Consecutive segments from the same speaker should be merged if the gap
-  is small (< 2 seconds)
-- Use Whisper's segment-level timestamps
+Post-process raw transcript with an LLM to produce structured meeting notes.
 
-### FB4 — System tray application
+- Use Mistral (configurable) via berget.ai's OpenAI-compatible API
+- Support separate API key for LLM endpoint (`BERGET_API_KEY2`)
+- Produce structured markdown output:
+  - `## Sammanfattning` — 2-4 sentence summary
+  - `## Beslut` — key decisions made
+  - `## Åtgärdspunkter` — action items with owners
+  - `## Mötesanteckningar` — cleaned-up prose version
+- Final output file (`transcript.md`) combines LLM summary with raw
+  transcript appended under `## Rå transkribering`
+
+### FB5 — System tray application
 
 Wrap the recorder in a system tray app using `pystray`.
 
 - Tray icon with status indicator:
-  - Idle (grey) — monitoring for calls
-  - Recording (red) — call in progress
-  - Transcribing (blue) — processing after call
+  - Grey — ready (idle)
+  - Red — recording
+  - Blue — transcribing
 - Right-click menu:
+  - Status label (disabled, informational)
+  - "Start Recording" — visible when idle
+  - "Stop Recording" — visible when recording
   - "Open Recordings" — opens output folder in Explorer
-  - "Status: Idle/Recording/Transcribing" — informational, disabled
   - "Settings..." — opens `config.json` in default editor
   - "Quit" — clean shutdown
-- Startup behavior:
-  - Load config
-  - Load Whisper model (show "Loading model..." status)
-  - Begin monitoring
-- Notification (Windows toast) when transcription is complete:
-  "Meeting recorded — transcript saved"
+- Config is re-read fresh each recording (no restart needed for changes)
+- Windows toast notification when transcription is complete
 
-### FB5 — Launcher and packaging
+### FB6 — Launcher and packaging
 
-- `run.bat` — one-click launcher: activates venv (if present) and runs
-  the app
-- Updated `requirements.txt` with all dependencies
-- README with setup instructions
+- `Recorder.bat` — one-click launcher: activates venv and runs the app
+- `requirements.txt` with all dependencies
+- README with setup instructions, configuration reference, and changelog
 
 ---
 
 ## Technical decisions
 
-- **Speaker diarization approach:** Since we already capture mic and
-  loopback separately, we get speaker identification for free —
-  no need for pyannote or other diarization models. "Me" = mic stream,
-  "Others" = loopback stream.
-- **Whisper variant:** Use `openai-whisper` (local). User can pick model
-  size via config. No `faster-whisper` for now (can revisit if perf is
-  an issue).
+- **Speaker identification:** Two-stream approach (mic vs. loopback)
+  gives speaker identification for free. Distinguishes "Me" from
+  "Others" but does not identify individual remote participants.
+- **WASAPI loopback** captures all system audio, not just the meeting
+  app. Other apps playing audio during a call will be included.
+- **Transcription:** berget.ai API with kb-whisper-large
+  (Swedish-optimized). No local model, no GPU needed.
+- **LLM post-processing:** Mistral via berget.ai. Produces structured
+  Swedish meeting notes. Temperature 0.3 for consistency.
 - **System tray:** `pystray` + `Pillow` for icon generation. Lightweight,
   no heavy GUI framework.
-- **Threading model:** Recording threads (existing pattern) + main thread
-  for tray. Transcription runs in a background thread to keep tray
-  responsive.
+- **Threading model:** Recording runs in a background thread. Two
+  sub-threads capture mic and loopback simultaneously. Transcription
+  and LLM processing run sequentially in the same background thread.
+- **No timestamps in transcript:** Whisper segment timestamps are not
+  used — the two-stream approach doesn't allow reliable chronological
+  interleaving without diarization.
 
 ## Dependencies
 
-Existing:
 - `pyaudiowpatch` — WASAPI loopback recording
-- `pycaw` — Windows audio session detection
-- `numpy`, `scipy` — audio processing
-- `openai-whisper` — transcription
-- `ffmpeg` — required by Whisper (external)
-
-New:
+- `pycaw` — Windows audio session enumeration (installed as dependency)
+- `numpy` — audio array processing
+- `scipy` — resampling
+- `openai` — berget.ai API client (OpenAI-compatible)
 - `pystray` — system tray
 - `Pillow` — icon rendering for tray
+- `plyer` — Windows toast notifications
 
 ## File structure
 
 ```
-meeting-recorder/
-  recorder.py           # main entry point
+Recorder/
+  recorder.py           # core recording, transcription, and LLM logic
+  tray.py               # system tray application (entry point)
   config.example.json   # committed example config
   config.json           # gitignored, user's real config
+  .env                  # gitignored, API keys
   requirements.txt
-  run.bat
+  Recorder.bat
   README.md
   prd.md
 ```
