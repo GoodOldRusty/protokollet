@@ -41,24 +41,33 @@ def _level_color(level: float) -> str:
 
 
 class VuMeterWindow:
-    """Small floating always-on-top window with two VU meter bars."""
+    """Small floating always-on-top window with two VU meter bars.
+
+    All tkinter objects are created in run() which must be called from
+    the thread that will own the mainloop. show()/hide()/stop() are
+    safe to call from any thread — they only set flags that the tkinter
+    thread polls.
+    """
 
     def __init__(self, levels: AudioLevels):
         self._levels = levels
+        self._root = None
+        self._visible = False
+        self._stopped = False
+        self._polling = False
+
+    def _build(self):
         self._root = tk.Tk()
         self._root.withdraw()
         self._root.title("Audio Levels")
-        self._root.overrideredirect(True)
         self._root.attributes("-topmost", True)
         self._root.attributes("-alpha", 0.85)
         self._root.configure(bg=BG)
-        self._root.geometry(f"270x60+20+20")
+        self._root.resizable(False, False)
+        self._root.geometry("270x60+20+20")
+        # Minimal window: disable close button, no min/max
+        self._root.protocol("WM_DELETE_WINDOW", lambda: None)
 
-        self._polling = False
-        self._build_ui()
-        self._setup_drag()
-
-    def _build_ui(self):
         frame = tk.Frame(self._root, bg=BG, padx=8, pady=6)
         frame.pack(fill="both", expand=True)
 
@@ -78,7 +87,7 @@ class VuMeterWindow:
         self._lb_canvas.grid(row=1, column=1, padx=(4, 0), pady=(4, 0))
         self._lb_bar = self._lb_canvas.create_rectangle(0, 0, 0, BAR_HEIGHT, fill=GREEN)
 
-    def _setup_drag(self):
+        # Drag support
         self._drag_x = 0
         self._drag_y = 0
         self._root.bind("<Button-1>", self._on_drag_start)
@@ -106,23 +115,31 @@ class VuMeterWindow:
         self._update_bar(self._lb_canvas, self._lb_bar, self._levels.loopback_level)
         self._root.after(POLL_MS, self._poll)
 
-    def show(self):
-        self._root.after(0, self._show)
+    def _tick(self):
+        """Periodic check for visibility and stop flags."""
+        if self._stopped:
+            self._root.quit()
+            return
+        if self._visible and not self._polling:
+            self._polling = True
+            self._root.deiconify()
+            self._poll()
+        elif not self._visible and self._polling:
+            self._polling = False
+            self._root.withdraw()
+        self._root.after(200, self._tick)
 
-    def _show(self):
-        self._polling = True
-        self._root.deiconify()
-        self._poll()
+    def show(self):
+        self._visible = True
 
     def hide(self):
-        self._root.after(0, self._hide)
-
-    def _hide(self):
-        self._polling = False
-        self._root.withdraw()
+        self._visible = False
 
     def run(self):
+        """Create the window and enter mainloop. Call from a dedicated thread."""
+        self._build()
+        self._root.after(200, self._tick)
         self._root.mainloop()
 
     def stop(self):
-        self._root.after(0, self._root.quit)
+        self._stopped = True

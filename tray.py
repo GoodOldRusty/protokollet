@@ -120,7 +120,7 @@ class TrayApp:
         self.recording_thread.start()
 
     def _stop_recording(self):
-        if self.state.status != RecorderState.RECORDING:
+        if self.state.status not in (RecorderState.RECORDING, RecorderState.TRANSCRIBING):
             return
         if self.stop_recording:
             self.stop_recording.set()
@@ -142,6 +142,9 @@ class TrayApp:
     def _is_recording(self, item):
         return self.state.status == RecorderState.RECORDING
 
+    def _is_transcribing(self, item):
+        return self.state.status == RecorderState.TRANSCRIBING
+
     def _build_menu(self):
         return pystray.Menu(
             pystray.MenuItem(
@@ -159,6 +162,11 @@ class TrayApp:
                 "Stop Recording",
                 lambda item: self._stop_recording(),
                 visible=self._is_recording,
+            ),
+            pystray.MenuItem(
+                "Cancel Transcription",
+                lambda item: self._stop_recording(),
+                visible=self._is_transcribing,
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Open Recordings", lambda item: self._open_recordings()),
@@ -192,10 +200,6 @@ class TrayApp:
         )
         self.p = pyaudio.PyAudio()
 
-        self.vu_window = VuMeterWindow(self.audio_levels)
-        self.vu_thread = threading.Thread(target=self.vu_window.run, daemon=True)
-        self.vu_thread.start()
-
         log.info("Ready. Using %s via berget.ai", self.cfg["whisper_model"])
 
         self.icon = pystray.Icon(
@@ -205,7 +209,13 @@ class TrayApp:
             menu=self._build_menu(),
         )
 
-        self.icon.run()
+        # Run pystray in a background thread so tkinter can have the main thread
+        tray_thread = threading.Thread(target=self.icon.run, daemon=True)
+        tray_thread.start()
+
+        # Tkinter requires the main thread on Windows
+        self.vu_window = VuMeterWindow(self.audio_levels)
+        self.vu_window.run()  # blocks until stop() is called
 
 
 if __name__ == "__main__":

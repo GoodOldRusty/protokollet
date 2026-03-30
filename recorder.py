@@ -235,18 +235,28 @@ def _split_wav(wav_path: Path) -> list[Path]:
     return chunks
 
 
+class TranscriptionCancelled(Exception):
+    """Raised when transcription is cancelled by the user."""
+
+
 def _transcribe_with_retry(audio_path: Path, chunk_num: int, total: int,
-                           client: OpenAI, cfg: dict) -> str:
-    """Convert to mp3 and transcribe with retry + exponential backoff."""
+                           client: OpenAI, cfg: dict,
+                           cancel_event: threading.Event = None) -> str:
+    """Convert to mp3 and transcribe with retry + exponential backoff.
+    Checks cancel_event during retry waits to allow early abort."""
     mp3_path = _wav_to_mp3(audio_path)
     try:
         for attempt in range(1, MAX_RETRIES + 1):
+            if cancel_event and cancel_event.is_set():
+                raise TranscriptionCancelled()
             try:
                 log.info("Transcribing chunk %d/%d (attempt %d, %.1f MB)...",
                          chunk_num, total, attempt, mp3_path.stat().st_size / 1e6)
                 text = _transcribe_file(mp3_path, client, cfg)
                 log.info("  Chunk %d done (%d chars)", chunk_num, len(text))
                 return text
+            except TranscriptionCancelled:
+                raise
             except Exception as e:
                 if attempt == MAX_RETRIES:
                     log.error("  Chunk %d failed after %d attempts: %s",
@@ -255,24 +265,37 @@ def _transcribe_with_retry(audio_path: Path, chunk_num: int, total: int,
                 delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
                 log.warning("  Chunk %d attempt %d failed, retrying in %ds...",
                             chunk_num, attempt, delay)
-                time.sleep(delay)
+                # Sleep in small increments to allow cancel check
+                for _ in range(delay):
+                    if cancel_event and cancel_event.is_set():
+                        raise TranscriptionCancelled()
+                    time.sleep(1)
     finally:
         mp3_path.unlink(missing_ok=True)
 
 
-def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict) -> str:
+def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict,
+                      cancel_event: threading.Event = None) -> str:
     """Transcribe a WAV file, splitting into chunks and converting to mp3.
-    Handles retry with exponential backoff for API failures."""
+    Handles retry with exponential backoff for API failures.
+    Checks cancel_event between chunks to allow early abort."""
     chunks = _split_wav(wav_path)
 
     if len(chunks) == 1 and chunks[0] == wav_path:
         log.info("Transcribing as single file")
-        return _transcribe_with_retry(wav_path, 1, 1, client, cfg)
+        return _transcribe_with_retry(wav_path, 1, 1, client, cfg,
+                                      cancel_event=cancel_event)
 
     log.info("Split into %d chunks", len(chunks))
     texts = []
     for i, chunk_path in enumerate(chunks):
-        text = _transcribe_with_retry(chunk_path, i + 1, len(chunks), client, cfg)
+        if cancel_event and cancel_event.is_set():
+            for remaining in chunks[i:]:
+                if remaining != wav_path:
+                    remaining.unlink(missing_ok=True)
+            raise TranscriptionCancelled()
+        text = _transcribe_with_retry(chunk_path, i + 1, len(chunks), client, cfg,
+                                      cancel_event=cancel_event)
         texts.append(text)
         if chunk_path != wav_path:
             chunk_path.unlink(missing_ok=True)
@@ -365,6 +388,16 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
     Record until stop_recording is set. Transcribe and save.
     Runs in a background thread.
     """
+    try:
+        _record_meeting_inner(p, client, cfg, state, stop_recording,
+                              on_transcript, audio_levels)
+    except Exception:
+        log.exception("record_meeting crashed")
+        state.set(RecorderState.IDLE)
+
+
+def _record_meeting_inner(p, client, cfg, state, stop_recording,
+                          on_transcript, audio_levels):
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     folder = cfg["output_dir"] / ts
     folder.mkdir(parents=True, exist_ok=True)
@@ -411,6 +444,7 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
     mic_thread.start()
 
     stop_recording.wait()
+    stop_recording.clear()  # reset so it can be reused for transcription cancel
 
     stop.set()
     lb_thread.join(timeout=5)
@@ -435,36 +469,52 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
     state.set(RecorderState.TRANSCRIBING)
     log.info("Transcribing via API...")
 
-    mic_text = ""
-    lb_text = ""
+    try:
+        mic_text = ""
+        lb_text = ""
 
-    if mic_duration > 0:
-        mic_text = transcribe_stream(mic_wav, client, cfg)
-    else:
-        log.info("Mic stream empty - skipping transcription")
+        if mic_duration > 0:
+            mic_text = transcribe_stream(mic_wav, client, cfg,
+                                         cancel_event=stop_recording)
+        else:
+            log.info("Mic stream empty - skipping transcription")
 
-    if lb_duration > 0:
-        lb_text = transcribe_stream(lb_wav, client, cfg)
-    else:
-        log.info("Loopback stream empty - skipping transcription")
+        if stop_recording.is_set():
+            raise TranscriptionCancelled()
 
-    my_name = cfg.get("my_name", "Me")
-    raw_transcript = format_raw_transcript(mic_text, lb_text, my_name)
+        if lb_duration > 0:
+            lb_text = transcribe_stream(lb_wav, client, cfg,
+                                         cancel_event=stop_recording)
+        else:
+            log.info("Loopback stream empty - skipping transcription")
 
-    log.info("Summarizing with LLM...")
-    ts_label = datetime.now().strftime("%Y-%m-%d %H:%M")
-    summary = summarize_transcript(raw_transcript, cfg)
+        if stop_recording.is_set():
+            raise TranscriptionCancelled()
 
-    md_content = f"# Mötesprotokoll {ts_label}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
-    md_path.write_text(md_content, encoding="utf-8")
-    log.info("Transcript saved: %s", md_path)
+        my_name = cfg.get("my_name", "Me")
+        raw_transcript = format_raw_transcript(mic_text, lb_text, my_name)
 
-    if not cfg["keep_audio"]:
-        mic_wav.unlink(missing_ok=True)
-        lb_wav.unlink(missing_ok=True)
-        log.info("Audio files deleted.")
+        log.info("Summarizing with LLM...")
+        ts_label = datetime.now().strftime("%Y-%m-%d %H:%M")
+        summary = summarize_transcript(raw_transcript, cfg)
 
-    state.set(RecorderState.IDLE)
+        md_content = f"# Mötesprotokoll {ts_label}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
+        md_path.write_text(md_content, encoding="utf-8")
+        log.info("Transcript saved: %s", md_path)
 
-    if on_transcript:
-        on_transcript(str(md_path))
+        if not cfg["keep_audio"]:
+            mic_wav.unlink(missing_ok=True)
+            lb_wav.unlink(missing_ok=True)
+            log.info("Audio files deleted.")
+
+        state.set(RecorderState.IDLE)
+
+        if on_transcript:
+            on_transcript(str(md_path))
+
+    except TranscriptionCancelled:
+        log.info("Transcription cancelled by user.")
+        if not cfg["keep_audio"]:
+            mic_wav.unlink(missing_ok=True)
+            lb_wav.unlink(missing_ok=True)
+        state.set(RecorderState.IDLE)
