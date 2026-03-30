@@ -156,10 +156,15 @@ class TrayApp:
         )
 
     def run(self):
+        log_file = Path(__file__).parent / "recorder.log"
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s  %(message)s",
             datefmt="%H:%M:%S",
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler(log_file, encoding="utf-8"),
+            ],
         )
 
         import pyaudiowpatch as pyaudio

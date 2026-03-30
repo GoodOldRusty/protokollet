@@ -9,6 +9,8 @@ Manual start/stop via system tray.
 import json
 import os
 import shutil
+import subprocess
+import time
 import wave
 import threading
 import logging
@@ -160,10 +162,14 @@ def frames_to_wav(frames: list, rate: int, out_path: Path) -> float:
 
 # ── Transcription ─────────────────────────────────────────────
 
+CHUNK_SECONDS = 120  # 2 minutes per chunk
+MAX_RETRIES = 5
+RETRY_BASE_DELAY = 10  # seconds
 
-def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict) -> str:
-    """Transcribe a WAV file via berget.ai API. Returns plain text."""
-    with open(wav_path, "rb") as f:
+
+def _transcribe_file(audio_path: Path, client: OpenAI, cfg: dict) -> str:
+    """Transcribe a single audio file via berget.ai API. Returns plain text."""
+    with open(audio_path, "rb") as f:
         kwargs = {
             "model": cfg["whisper_model"],
             "file": f,
@@ -173,6 +179,100 @@ def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict) -> str:
             kwargs["prompt"] = cfg["prompt"]
         result = client.audio.transcriptions.create(**kwargs)
     return result.text.strip()
+
+
+def _wav_to_mp3(wav_path: Path) -> Path:
+    """Convert WAV to mp3 using ffmpeg. Returns mp3 path."""
+    mp3_path = wav_path.with_suffix(".mp3")
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(wav_path), "-ac", "1", "-ar", "16000",
+         "-b:a", "64k", str(mp3_path)],
+        capture_output=True, check=True,
+    )
+    log.info("Converted %s: %.1f MB -> %.1f MB mp3",
+             wav_path.name, wav_path.stat().st_size / 1e6,
+             mp3_path.stat().st_size / 1e6)
+    return mp3_path
+
+
+def _split_wav(wav_path: Path) -> list[Path]:
+    """Split a WAV file into chunks. Returns list of chunk WAV paths."""
+    with wave.open(str(wav_path), "rb") as wf:
+        n_channels = wf.getnchannels()
+        sampwidth = wf.getsampwidth()
+        framerate = wf.getframerate()
+        n_frames = wf.getnframes()
+        duration = n_frames / framerate
+
+        if duration <= CHUNK_SECONDS:
+            return [wav_path]
+
+        chunk_frames = CHUNK_SECONDS * framerate
+        chunks = []
+        chunk_idx = 0
+
+        while wf.tell() < n_frames:
+            frames_to_read = min(chunk_frames, n_frames - wf.tell())
+            data = wf.readframes(frames_to_read)
+
+            chunk_path = wav_path.parent / f"{wav_path.stem}_chunk{chunk_idx:03d}.wav"
+            with wave.open(str(chunk_path), "wb") as cf:
+                cf.setnchannels(n_channels)
+                cf.setsampwidth(sampwidth)
+                cf.setframerate(framerate)
+                cf.writeframes(data)
+
+            chunk_dur = frames_to_read / framerate
+            log.info("  Chunk %d: %.0fs", chunk_idx, chunk_dur)
+            chunks.append(chunk_path)
+            chunk_idx += 1
+
+    return chunks
+
+
+def _transcribe_with_retry(audio_path: Path, chunk_num: int, total: int,
+                           client: OpenAI, cfg: dict) -> str:
+    """Convert to mp3 and transcribe with retry + exponential backoff."""
+    mp3_path = _wav_to_mp3(audio_path)
+    try:
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                log.info("Transcribing chunk %d/%d (attempt %d, %.1f MB)...",
+                         chunk_num, total, attempt, mp3_path.stat().st_size / 1e6)
+                text = _transcribe_file(mp3_path, client, cfg)
+                log.info("  Chunk %d done (%d chars)", chunk_num, len(text))
+                return text
+            except Exception as e:
+                if attempt == MAX_RETRIES:
+                    log.error("  Chunk %d failed after %d attempts: %s",
+                              chunk_num, MAX_RETRIES, e)
+                    raise
+                delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                log.warning("  Chunk %d attempt %d failed, retrying in %ds...",
+                            chunk_num, attempt, delay)
+                time.sleep(delay)
+    finally:
+        mp3_path.unlink(missing_ok=True)
+
+
+def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict) -> str:
+    """Transcribe a WAV file, splitting into chunks and converting to mp3.
+    Handles retry with exponential backoff for API failures."""
+    chunks = _split_wav(wav_path)
+
+    if len(chunks) == 1 and chunks[0] == wav_path:
+        log.info("Transcribing as single file")
+        return _transcribe_with_retry(wav_path, 1, 1, client, cfg)
+
+    log.info("Split into %d chunks", len(chunks))
+    texts = []
+    for i, chunk_path in enumerate(chunks):
+        text = _transcribe_with_retry(chunk_path, i + 1, len(chunks), client, cfg)
+        texts.append(text)
+        if chunk_path != wav_path:
+            chunk_path.unlink(missing_ok=True)
+
+    return " ".join(texts)
 
 
 def format_raw_transcript(mic_text: str, lb_text: str, my_name: str = "Me") -> str:
