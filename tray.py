@@ -18,6 +18,7 @@ from recorder import (
     load_config,
     record_meeting,
 )
+from vu_meter import AudioLevels, VuMeterWindow
 
 log = logging.getLogger("tray")
 
@@ -78,6 +79,9 @@ class TrayApp:
         self.p = None
         self.stop_recording = None
         self.recording_thread = None
+        self.audio_levels = AudioLevels()
+        self.vu_window = None
+        self.vu_thread = None
 
         self.state.on_change(self._on_state_change)
 
@@ -86,6 +90,11 @@ class TrayApp:
             self.icon.icon = create_icon_image(COLORS[status])
             self.icon.title = f"Meeting Recorder - {STATUS_LABELS[status]}"
             self.icon.update_menu()
+        if self.vu_window:
+            if status == RecorderState.RECORDING:
+                self.vu_window.show()
+            else:
+                self.vu_window.hide()
 
     def _open_recordings(self):
         folder = self.cfg["output_dir"]
@@ -105,6 +114,7 @@ class TrayApp:
             target=record_meeting,
             args=(self.p, self.client, self.cfg, self.state,
                   self.stop_recording, self._on_transcript),
+            kwargs={"audio_levels": self.audio_levels},
             daemon=True,
         )
         self.recording_thread.start()
@@ -118,6 +128,8 @@ class TrayApp:
     def _quit(self):
         if self.stop_recording:
             self.stop_recording.set()
+        if self.vu_window:
+            self.vu_window.stop()
         if self.icon:
             self.icon.stop()
 
@@ -179,6 +191,10 @@ class TrayApp:
             base_url=self.cfg["api_base_url"],
         )
         self.p = pyaudio.PyAudio()
+
+        self.vu_window = VuMeterWindow(self.audio_levels)
+        self.vu_thread = threading.Thread(target=self.vu_window.run, daemon=True)
+        self.vu_thread.start()
 
         log.info("Ready. Using %s via berget.ai", self.cfg["whisper_model"])
 

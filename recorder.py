@@ -102,6 +102,7 @@ def record_device(
     device_info: dict,
     frames: list,
     stop_event: threading.Event,
+    level_callback=None,
 ):
     """Record from device into frames[] until stop_event is set.
     Stores channel count as first element for downmix."""
@@ -119,6 +120,10 @@ def record_device(
     while not stop_event.is_set():
         data = stream.read(CHUNK, exception_on_overflow=False)
         frames.append(data)
+        if level_callback is not None:
+            samples = np.frombuffer(data, dtype=np.int16)
+            rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2)) / 32768.0
+            level_callback(min(1.0, rms * 3.0))
     stream.stop_stream()
     stream.close()
 
@@ -355,7 +360,7 @@ class RecorderState:
 def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
                    state: RecorderState,
                    stop_recording: threading.Event,
-                   on_transcript=None):
+                   on_transcript=None, audio_levels=None):
     """
     Record until stop_recording is set. Transcribe and save.
     Runs in a background thread.
@@ -384,14 +389,19 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
     lb_frames, mic_frames = [], []
     stop = threading.Event()
 
+    lb_level_cb = audio_levels.update_loopback if audio_levels else None
+    mic_level_cb = audio_levels.update_mic if audio_levels else None
+
     lb_thread = threading.Thread(
         target=record_device,
         args=(p, loopback, lb_frames, stop),
+        kwargs={"level_callback": lb_level_cb},
         daemon=True,
     )
     mic_thread = threading.Thread(
         target=record_device,
         args=(p, mic, mic_frames, stop),
+        kwargs={"level_callback": mic_level_cb},
         daemon=True,
     )
 
