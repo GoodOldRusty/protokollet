@@ -13,9 +13,11 @@ from pathlib import Path
 
 from recorder import (
     load_config,
-    transcribe_stream,
+    _transcribe_file,
     format_raw_transcript,
     summarize_transcript,
+    parse_title_from_summary,
+    title_to_filename,
 )
 from openai import OpenAI
 
@@ -94,7 +96,7 @@ def transcribe_chunk_with_retry(chunk_path: Path, chunk_num: int, total: int,
         try:
             log.info("Transcribing chunk %d/%d (attempt %d, %.1f MB mp3)...",
                      chunk_num, total, attempt, mp3_path.stat().st_size / 1e6)
-            text = transcribe_stream(mp3_path, client, cfg)
+            text = _transcribe_file(mp3_path, client, cfg)
             log.info("  Chunk %d done (%d chars)", chunk_num, len(text))
             mp3_path.unlink(missing_ok=True)
             return text
@@ -186,9 +188,17 @@ raw_transcript = format_raw_transcript(mic_text, lb_text, my_name)
 
 log.info("Summarizing with LLM...")
 ts_label = datetime.now().strftime("%Y-%m-%d %H:%M")
-summary = summarize_transcript(raw_transcript, cfg)
+raw_summary = summarize_transcript(raw_transcript, cfg)
+title, summary = parse_title_from_summary(raw_summary)
 log.info("Summary done (%d chars)", len(summary))
 
-md_content = f"# Mötesprotokoll {ts_label}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
+if title:
+    ts_from_folder = folder.name  # e.g. "2026-04-01_14-31"
+    md_path = folder / title_to_filename(title, ts_from_folder)
+    heading = f"# {title} — {ts_label}"
+else:
+    heading = f"# Mötesprotokoll {ts_label}"
+
+md_content = f"{heading}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
 md_path.write_text(md_content, encoding="utf-8")
 log.info("Transcript saved: %s", md_path)

@@ -8,6 +8,7 @@ Manual start/stop via system tray.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -319,6 +320,8 @@ fel och upprepningar från tal-till-text.
 
 Skapa ett strukturerat mötesprotokoll i markdown med följande sektioner:
 
+TITLE: <kort beskrivande titel för mötet, 2-5 ord, på svenska>
+
 ## Sammanfattning
 En kort sammanfattning av mötet (2-4 meningar).
 
@@ -334,7 +337,7 @@ En uppstädad version av samtalet i löpande text. Korrigera uppenbara \
 transkriptionsfel, ta bort upprepningar och fyllnadsord, men behåll \
 innebörden. Ange vem som sa vad (Me/Others) där det är tydligt.
 
-Skriv allt på svenska."""
+Skriv allt på svenska. Börja svaret med TITLE-raden."""
 
 
 def get_llm_client(cfg: dict) -> OpenAI:
@@ -355,6 +358,28 @@ def summarize_transcript(raw_transcript: str, cfg: dict) -> str:
         temperature=0.3,
     )
     return response.choices[0].message.content.strip()
+
+
+def parse_title_from_summary(summary: str) -> tuple[str, str]:
+    """Extract TITLE: line from summary. Returns (title, summary_without_title)."""
+    match = re.match(r"TITLE:\s*(.+)", summary)
+    if not match:
+        return "", summary
+    title = match.group(1).strip()
+    rest = summary[match.end():].lstrip("\n")
+    return title, rest
+
+
+def title_to_filename(title: str, ts: str) -> str:
+    """Convert a title to a filesystem-safe filename like '2026-04-01_14-31_budgetplanering-q3.md'."""
+    slug = title.lower()
+    slug = re.sub(r"[^\w\s\-åäöÅÄÖ]", "", slug)  # remove non-word chars except spaces/hyphens/Swedish
+    slug = re.sub(r"[\s_]+", "-", slug).strip("-")
+    slug = slug[:60]  # cap length
+    if slug:
+        return f"{ts}_{slug}.md"
+    return f"{ts}_transcript.md"
+
 
 # ── State ─────────────────────────────────────────────────────
 
@@ -496,9 +521,21 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
 
         log.info("Summarizing with LLM...")
         ts_label = datetime.now().strftime("%Y-%m-%d %H:%M")
-        summary = summarize_transcript(raw_transcript, cfg)
+        title = ""
+        try:
+            raw_summary = summarize_transcript(raw_transcript, cfg)
+            title, summary = parse_title_from_summary(raw_summary)
+        except Exception:
+            log.exception("LLM summarization failed - saving raw transcript only")
+            summary = "*Sammanfattning kunde inte genereras (LLM-fel). Kör retranscribe.py för att försöka igen.*"
 
-        md_content = f"# Mötesprotokoll {ts_label}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
+        if title:
+            md_path = folder / title_to_filename(title, ts)
+            heading = f"# {title} — {ts_label}"
+        else:
+            heading = f"# Mötesprotokoll {ts_label}"
+
+        md_content = f"{heading}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
         md_path.write_text(md_content, encoding="utf-8")
         log.info("Transcript saved: %s", md_path)
 
