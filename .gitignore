@@ -8,3 +8,4 @@ venv/
 *.key
 *.pem
 *.secret
+*.log
