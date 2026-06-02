@@ -131,6 +131,14 @@ def record_device(
 
 def frames_to_wav(frames: list, rate: int, out_path: Path) -> float:
     """Save raw frames as 16-bit mono WAV. Returns duration in seconds."""
+    if not frames:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(out_path), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(SAMPLERATE)
+            wf.writeframes(b"")
+        return 0.0
     channels = frames[0]
     raw = b"".join(frames[1:])
     arr = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
