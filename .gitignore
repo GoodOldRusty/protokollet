@@ -1,5 +1,7 @@
 config.json
 .env
+.claude/
+.dev/
 __pycache__/
 *.pyc
 .local/
