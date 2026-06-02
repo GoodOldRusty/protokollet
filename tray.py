@@ -67,6 +67,20 @@ def notify(title: str, message: str):
     except Exception:
         log.debug("Toast notification failed", exc_info=True)
 
+
+def show_error(title: str, message: str):
+    """Show a blocking error dialog. The app runs under pythonw (no console),
+    so a silent log would leave a first-time user with no feedback at all."""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(title, message)
+        root.destroy()
+    except Exception:
+        log.error("%s: %s", title, message)
+
 # ── Tray app ──────────────────────────────────────────────────
 
 
@@ -191,7 +205,13 @@ class TrayApp:
 
         api_key = os.environ.get("BERGET_API_KEY", "")
         if not api_key:
-            log.error("BERGET_API_KEY not set. Add it to .env file.")
+            show_error(
+                "Meeting Recorder — setup needed",
+                "No berget.ai API key was found.\n\n"
+                "Please run setup.bat to enter your API key, then start "
+                "Meeting Recorder again.\n\n"
+                "You can get a key at https://berget.ai",
+            )
             return
 
         self.client = OpenAI(
