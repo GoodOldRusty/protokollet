@@ -1,36 +1,85 @@
 # Meeting Recorder
 
-**Version:** 1.3.0
+**Version:** 1.4.0
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
-Records meetings via manual start/stop, transcribes using berget.ai's
-kb-whisper-large (Swedish-optimized), and produces structured meeting
-notes with summary, decisions, and action items via LLM post-processing.
-Runs as a Windows system tray application. No GPU required.
+Meeting Recorder is a small Windows app that lives in your system tray.
+You click **Start** when a meeting begins and **Stop** when it ends — it
+records both your microphone and the other participants, transcribes the
+conversation, and saves tidy meeting notes (summary, decisions, and action
+items) as a text file you can read in any editor.
+
+It is built for Swedish meetings (using a Swedish-optimised speech model)
+but works for other languages too. No GPU or special hardware is needed.
+
+> **Privacy note:** Your audio is sent to the [berget.ai](https://berget.ai)
+> service for transcription and summarisation. Nothing is uploaded anywhere
+> else, and recordings stay on your computer. Only use this for meetings you
+> are allowed to record — check local rules and tell participants.
 
 ---
 
 ## Quick Start
 
-1. Install Python 3.10+
-2. Create a virtual environment and install dependencies:
-   ```
-   python -m venv .venv
-   .venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-3. Create a `.env` file with your berget.ai API keys:
-   ```
-   BERGET_API_KEY=your-whisper-api-key
-   BERGET_API_KEY2=your-llm-api-key
-   ```
-   If you use the same key for both, just set `BERGET_API_KEY`.
-4. Double-click `Recorder.bat` (or run `python tray.py`)
-5. Right-click the tray icon and click **Start Recording** when your
-   meeting begins
-6. Click **Stop Recording** when it ends
-7. Meeting notes are saved to `~/Recordings/<timestamp>_<topic>.md`
+You only do steps 1–3 once. After that, recording is just step 4.
+
+### 1. Install Python (one time)
+
+Download and install Python 3.10 or newer from
+**[python.org/downloads](https://www.python.org/downloads/)**.
+
+> ⚠️ On the first installer screen, tick the box
+> **"Add python.exe to PATH"** before clicking Install. This one checkbox
+> is what lets the rest of the setup work automatically.
+
+### 2. Download Meeting Recorder
+
+On the GitHub page, click the green **Code** button → **Download ZIP**.
+Then right-click the downloaded file → **Extract All** to a folder you'll
+remember (e.g. `Documents\MeetingRecorder`).
+
+*(If you know Git, you can `git clone` instead — same result.)*
+
+### 3. Run the setup
+
+Double-click **`setup.bat`** in the folder. A window opens and walks you
+through everything:
+
+- checks that Python is installed
+- installs the components the app needs
+- asks you to paste your **berget.ai API key**
+
+You get a free API key by signing up at **[berget.ai](https://berget.ai)**.
+Copy the key, paste it into the setup window when asked, and press Enter.
+
+When it says *"Setup complete!"* you're done.
+
+### 4. Record a meeting
+
+1. Double-click **`Recorder.bat`**. A round icon appears in your system
+   tray (bottom-right of the screen, near the clock).
+2. **Right-click the icon → Start Recording** when your meeting begins.
+3. **Right-click the icon → Stop Recording** when it ends.
+4. After a short transcription, a notification appears and your notes are
+   saved to `Documents\Recordings` (your user folder) as a `.md` file —
+   for example `2026-04-01_14-31_budgetplanering-q3.md`.
+
+---
+
+## Screenshots
+
+> 📷 _These are placeholders. Capture the images on your own machine, save
+> them in a `docs/` folder, and uncomment the matching line below._
+
+<!-- ![The tray icon and right-click menu](docs/tray-menu.png) -->
+<!-- ![The floating VU meter during recording](docs/vu-meter.png) -->
+<!-- ![Example meeting notes output](docs/example-notes.png) -->
+
+Suggested captures: (1) the tray menu open, (2) the VU meter window while
+recording, (3) an example output `.md` file opened in an editor.
+
+---
 
 ## How It Works
 
@@ -117,8 +166,62 @@ Add or remove terms as needed. The Whisper prompt field is capped at
 224 tokens — the default list uses 213. No restart required — the
 config is read fresh each recording.
 
+---
+
+## Troubleshooting
+
+**Nothing happens when I double-click `setup.bat`, or it says Python was
+not found.**
+Python isn't installed, or the "Add python.exe to PATH" box wasn't ticked
+during install. Re-install Python from
+[python.org](https://www.python.org/downloads/), making sure to tick that
+box, then run `setup.bat` again.
+
+**I started the app but no tray icon appears.**
+If you haven't entered an API key yet, a message box will tell you to run
+`setup.bat`. The icon may also be hidden — click the small upward arrow
+(^) in the system tray to show hidden icons.
+
+**Transcription fails or the icon stays blue.**
+Check your internet connection and that your berget.ai key is valid and
+has credit. Use **Cancel Transcription** from the menu, then try again.
+Technical details are written to `recorder.log` in the app folder.
+
+**The "Others" track includes music or other app sounds.**
+Loopback captures *all* system audio. Mute other apps (browser, music)
+during meetings.
+
+---
+
+## FAQ
+
+**Do I need a powerful computer?**
+No. All the heavy processing happens on berget.ai's servers. Any modern
+Windows PC works.
+
+**Does it cost money?**
+The app is free. berget.ai charges a small amount per minute of audio
+(see API cost in Technical Notes — roughly 0.09 EUR for a 30-minute
+meeting). You need a berget.ai account.
+
+**Where are my recordings saved?**
+In a `Recordings` folder inside your user folder by default. Use
+**Open Recordings** from the tray menu to jump straight there.
+
+**Can it record without me clicking Start?**
+No — recording is always manual, by design. You decide when it captures.
+
+**Does my audio leave my computer?**
+Only the audio is sent to berget.ai for transcription. See the privacy
+note at the top.
+
+---
+
 ## Technical Notes
 
+- **No manual ffmpeg install** — audio chunk conversion uses the ffmpeg
+  binary bundled by the `imageio-ffmpeg` package, installed automatically
+  during setup.
 - **Speaker identification** uses the two-stream approach (mic vs.
   loopback) rather than a diarization model. This means it distinguishes
   you from "Others" but does not identify individual remote participants.
@@ -140,6 +243,17 @@ config is read fresh each recording.
 ---
 
 ## Changelog
+
+### v1.4.0 (2026-06-02)
+- One-step guided setup via `setup.bat`: checks Python, creates the
+  environment, installs dependencies, and saves your API key
+- ffmpeg is now bundled automatically (`imageio-ffmpeg`) — no manual install
+- Friendly first-run dialog when the API key is missing (previously the
+  app exited silently with no feedback)
+- Suppressed the console windows that flashed during transcription
+- Added `.env.example`, an MIT `LICENSE`, and a public-facing README with
+  troubleshooting and FAQ
+- Runtime log files are no longer committed
 
 ### v1.3.0 (2026-06-02)
 - Floating VU meter window shows real-time mic and loopback levels during recording
