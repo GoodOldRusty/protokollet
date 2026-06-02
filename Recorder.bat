@@ -17,4 +17,10 @@ if not exist "config.json" (
     )
 )
 
-start "" pythonw tray.py
+:: Launch the app windowless. Prefer the venv interpreter explicitly so the
+:: bundled dependencies (incl. ffmpeg) are always used, regardless of PATH.
+if exist ".venv\Scripts\pythonw.exe" (
+    start "" ".venv\Scripts\pythonw.exe" tray.py
+) else (
+    start "" pythonw tray.py
+)

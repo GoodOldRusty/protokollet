@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Re-run transcription on existing WAV files in a recording folder.
-Splits large files into 5-minute chunks, converts to mp3, and retries on failure."""
+Splits large files into 2-minute chunks, converts to mp3, and retries on failure."""
 
 import logging
 import os
