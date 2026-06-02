@@ -154,11 +154,14 @@ Wrap the recorder in a system tray app using `pystray`.
 
 ```
 Recorder/
-  recorder.py           # core recording, transcription, and LLM logic
-  tray.py               # system tray application (entry point)
-  config.example.json   # committed example config
-  config.json           # gitignored, user's real config
-  .env                  # gitignored, API keys
+  recorder.py                 # core recording, transcription, and LLM logic
+  tray.py                     # system tray application (entry point)
+  vu_meter.py                 # floating VU meter window (tkinter)
+  retranscribe.py             # re-transcribe existing WAV files
+  create_startup_shortcut.vbs # add app to Windows startup
+  config.example.json         # committed example config
+  config.json                 # gitignored, user's real config
+  .env                        # gitignored, API keys
   requirements.txt
   Recorder.bat
   README.md

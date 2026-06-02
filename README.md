@@ -1,6 +1,6 @@
 # Meeting Recorder
 
-**Version:** 1.2.0
+**Version:** 1.3.0
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -30,7 +30,7 @@ Runs as a Windows system tray application. No GPU required.
 5. Right-click the tray icon and click **Start Recording** when your
    meeting begins
 6. Click **Stop Recording** when it ends
-7. Meeting notes are saved to `~/Recordings/<timestamp>/transcript.md`
+7. Meeting notes are saved to `~/Recordings/<timestamp>_<topic>.md`
 
 ## How It Works
 
@@ -44,7 +44,8 @@ Runs as a Windows system tray application. No GPU required.
    your name (configurable), loopback is labeled "Others".
 5. **LLM Summary** — The raw transcript is processed by Mistral to
    produce structured meeting notes.
-6. **Output** — A markdown file with:
+6. **Output** — A descriptively named markdown file (e.g.
+   `2026-04-01_14-31_budgetplanering-q3.md`) with:
 
    ```markdown
    # Mötesprotokoll 2026-03-26 14:30
@@ -78,11 +79,14 @@ Runs as a Windows system tray application. No GPU required.
 
 Right-click the tray icon for:
 - **Start Recording** / **Stop Recording** — manual control
+- **Cancel Transcription** — abort an in-progress transcription
 - **Open Recordings** — opens the output folder
 - **Settings...** — opens `config.json` in your default editor
 - **Quit** — clean shutdown
 
-A Windows notification appears when transcription is complete.
+A floating VU meter window shows real-time mic and loopback levels
+during recording. A Windows notification appears when transcription
+is complete.
 
 ### Configuration
 
@@ -121,6 +125,11 @@ config is read fresh each recording.
 - **WASAPI loopback** captures all system audio, not just the meeting
   app. If other apps play audio during a call, it will be included in
   the "Others" stream.
+- **Chunked transcription** — audio files are split into 2-minute
+  chunks, converted to mp3, and sent individually with automatic retry.
+  This avoids API timeouts on long recordings.
+- **VU meter** — a floating tkinter window displays real-time audio
+  levels for mic and loopback during recording.
 - **API cost** — transcription is ~0.00005 EUR/second (~0.09 EUR for
   a 30 min meeting). LLM summary costs fractions of a cent per meeting.
 - Recordings under `min_seconds` are automatically discarded.
@@ -131,6 +140,16 @@ config is read fresh each recording.
 ---
 
 ## Changelog
+
+### v1.3.0 (2026-06-02)
+- Floating VU meter window shows real-time mic and loopback levels during recording
+- Auto-start on Windows login via startup shortcut
+- Chunked mp3 transcription with retry for API reliability (large files split into 2-min chunks)
+- Cancel support for in-progress recording and transcription
+- Descriptive transcript filenames derived from LLM-generated meeting title
+- Graceful fallback to raw transcript if LLM summarization fails
+- Fix: handle empty audio frames without crashing
+- Fix: VU meter threading and cleanup on stop
 
 ### v1.2.0 (2026-03-26)
 - LLM post-processing: structured markdown output with summary,
