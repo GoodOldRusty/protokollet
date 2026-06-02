@@ -24,6 +24,10 @@ from openai import OpenAI
 
 log = logging.getLogger("recorder")
 
+# Suppress the console window Windows spawns for child processes (ffmpeg).
+# The tray app runs windowless, so each subprocess would otherwise flash a console.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 # ── Config ────────────────────────────────────────────────────
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
@@ -201,7 +205,7 @@ def _wav_to_mp3(wav_path: Path) -> Path:
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(wav_path), "-ac", "1", "-ar", "16000",
          "-b:a", "64k", str(mp3_path)],
-        capture_output=True, check=True,
+        capture_output=True, check=True, creationflags=_NO_WINDOW,
     )
     log.info("Converted %s: %.1f MB -> %.1f MB mp3",
              wav_path.name, wav_path.stat().st_size / 1e6,
