@@ -119,6 +119,62 @@ Wrap the recorder in a system tray app using `pystray`.
 
 ---
 
+## Launch readiness (v1.4.0)
+
+Goal: make the repo public-launch ready — a non-technical Windows user
+should understand what it does and set it up with minimal effort, while
+the project stays fully transparent (plain Python scripts, no opaque
+`.exe`). Distributed via GitHub (download ZIP, no git knowledge needed).
+
+Two manual steps remain unavoidable and are documented clearly:
+install Python, and obtain + paste a berget.ai API key.
+
+### LR1 — Bundle ffmpeg via pip (remove hidden dependency)
+
+`ffmpeg` is currently required (mp3 conversion of audio chunks) but never
+documented — a non-technical user hits a cryptic crash. Replace the bare
+`ffmpeg` PATH call with the binary shipped by the `imageio-ffmpeg` pip
+package so it installs automatically with the other dependencies.
+
+- Add `imageio-ffmpeg` to `requirements.txt`
+- Resolve the ffmpeg binary path via `imageio_ffmpeg.get_ffmpeg_exe()`
+  in `recorder.py` and `retranscribe.py`
+- No behavior change to output; keeps `CREATE_NO_WINDOW` suppression
+
+### LR2 — Guided one-time setup (`setup.bat`)
+
+Transparent, plain-language setup a non-technical user can run by
+double-clicking:
+
+- Verify Python is installed; if not, point to the download with a clear
+  message
+- Create the `.venv` and `pip install -r requirements.txt`
+- Prompt for the berget.ai API key and write `.env` (skip if already set)
+- Echo each step so the user sees what is happening
+
+### LR3 — Friendly first-run in the app
+
+`tray.py` currently exits silently when the API key is missing (runs under
+`pythonw`, so the user sees nothing). Replace with a clear GUI message box
+directing the user to run `setup.bat`, for missing key and missing config.
+
+### LR4 — README overhaul for public audience
+
+- Plain-language "what it does" + privacy note (audio is sent to berget.ai)
+- Prerequisites with direct links (Python, berget.ai signup)
+- 4-step setup: install Python → download ZIP → run `setup.bat` → run
+  `Recorder.bat`
+- Screenshot/GIF placeholders (user supplies captures of the running app)
+- Troubleshooting + FAQ
+
+### LR5 — Repo hygiene
+
+- Add `.env.example` (committed) documenting the two API key variables
+- Add a `LICENSE` file
+- Verify `.gitignore` never commits keys, recordings, logs, or config
+
+---
+
 ## Technical decisions
 
 - **Speaker identification:** Two-stream approach (mic vs. loopback)

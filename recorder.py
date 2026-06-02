@@ -28,6 +28,13 @@ log = logging.getLogger("recorder")
 # The tray app runs windowless, so each subprocess would otherwise flash a console.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
+
+def _ffmpeg_exe() -> str:
+    """Path to the ffmpeg binary bundled by the imageio-ffmpeg package.
+    Avoids requiring users to install ffmpeg separately."""
+    import imageio_ffmpeg
+    return imageio_ffmpeg.get_ffmpeg_exe()
+
 # ── Config ────────────────────────────────────────────────────
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
@@ -203,7 +210,7 @@ def _wav_to_mp3(wav_path: Path) -> Path:
     """Convert WAV to mp3 using ffmpeg. Returns mp3 path."""
     mp3_path = wav_path.with_suffix(".mp3")
     subprocess.run(
-        ["ffmpeg", "-y", "-i", str(wav_path), "-ac", "1", "-ar", "16000",
+        [_ffmpeg_exe(), "-y", "-i", str(wav_path), "-ac", "1", "-ar", "16000",
          "-b:a", "64k", str(mp3_path)],
         capture_output=True, check=True, creationflags=_NO_WINDOW,
     )

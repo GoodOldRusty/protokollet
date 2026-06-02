@@ -18,6 +18,8 @@ from recorder import (
     summarize_transcript,
     parse_title_from_summary,
     title_to_filename,
+    _ffmpeg_exe,
+    _NO_WINDOW,
 )
 from openai import OpenAI
 
@@ -41,9 +43,9 @@ def wav_to_mp3(wav_path: Path) -> Path:
     """Convert WAV to mp3 using ffmpeg. Returns mp3 path."""
     mp3_path = wav_path.with_suffix(".mp3")
     subprocess.run(
-        ["ffmpeg", "-y", "-i", str(wav_path), "-ac", "1", "-ar", "16000",
+        [_ffmpeg_exe(), "-y", "-i", str(wav_path), "-ac", "1", "-ar", "16000",
          "-b:a", "64k", str(mp3_path)],
-        capture_output=True, check=True,
+        capture_output=True, check=True, creationflags=_NO_WINDOW,
     )
     wav_size = wav_path.stat().st_size
     mp3_size = mp3_path.stat().st_size
