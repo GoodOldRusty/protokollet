@@ -7,5 +7,5 @@
     "min_seconds": 30,
     "output_dir": "~/Recordings",
     "api_base_url": "https://api.berget.ai/v1",
-    "prompt": "Power BI, SQL Server, SSIS, SSRS, SSAS, Git, Azure DevOps, DAX, T-SQL, ETL, Data Warehouse"
+    "prompt": "Comma-separated domain terms to improve accuracy: product names, acronyms, and technical jargon you expect in meetings"
 }
