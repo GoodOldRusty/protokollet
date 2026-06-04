@@ -308,17 +308,23 @@ def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict,
 
     log.info("Split into %d chunks", len(chunks))
     texts = []
-    for i, chunk_path in enumerate(chunks):
-        if cancel_event and cancel_event.is_set():
-            for remaining in chunks[i:]:
-                if remaining != wav_path:
-                    remaining.unlink(missing_ok=True)
-            raise TranscriptionCancelled()
-        text = _transcribe_with_retry(chunk_path, i + 1, len(chunks), client, cfg,
-                                      cancel_event=cancel_event)
-        texts.append(text)
-        if chunk_path != wav_path:
-            chunk_path.unlink(missing_ok=True)
+    try:
+        for i, chunk_path in enumerate(chunks):
+            if cancel_event and cancel_event.is_set():
+                raise TranscriptionCancelled()
+            text = _transcribe_with_retry(chunk_path, i + 1, len(chunks), client, cfg,
+                                          cancel_event=cancel_event)
+            texts.append(text)
+            if chunk_path != wav_path:
+                chunk_path.unlink(missing_ok=True)
+    except TranscriptionCancelled:
+        # Cancel can fire mid-chunk, so remove every chunk file (the in-flight
+        # one and any not yet processed). Already-done chunks were deleted above;
+        # missing_ok makes the re-delete harmless. The original wav_path is kept.
+        for chunk_path in chunks:
+            if chunk_path != wav_path:
+                chunk_path.unlink(missing_ok=True)
+        raise
 
     return " ".join(texts)
 
@@ -490,6 +496,11 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
     stop_recording.wait()
     stop_recording.clear()  # reset so it can be reused for transcription cancel
 
+    # Show "processing" immediately so the user sees their Stop registered.
+    # Saving a long recording can take minutes; without this the icon stays
+    # red and users click Stop again, which used to cancel transcription.
+    state.set(RecorderState.TRANSCRIBING)
+
     stop.set()
     lb_thread.join(timeout=5)
     mic_thread.join(timeout=5)
@@ -510,7 +521,9 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
         state.set(RecorderState.IDLE)
         return
 
-    state.set(RecorderState.TRANSCRIBING)
+    # Drop any stray Stop/Cancel clicks that landed during the slow save,
+    # so they don't immediately abort transcription before it even starts.
+    stop_recording.clear()
     log.info("Transcribing via API...")
 
     try:
@@ -569,8 +582,9 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
             on_transcript(str(md_path))
 
     except TranscriptionCancelled:
-        log.info("Transcription cancelled by user.")
-        if not cfg["keep_audio"]:
-            mic_wav.unlink(missing_ok=True)
-            lb_wav.unlink(missing_ok=True)
+        # Keep the audio (even if keep_audio is false) so a cancelled meeting
+        # can be recovered rather than lost. Temporary chunk/mp3 files were
+        # cleaned up by transcribe_stream; only mic.wav/loopback.wav remain.
+        log.info("Transcription cancelled. Audio kept in: %s", folder)
+        log.info("To finish it later, run: python retranscribe.py \"%s\"", folder)
         state.set(RecorderState.IDLE)

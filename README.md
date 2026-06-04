@@ -1,6 +1,6 @@
 # Meeting Recorder
 
-**Version:** 1.4.0
+**Version:** 1.4.1
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -236,6 +236,9 @@ note at the top.
 - **API cost** — transcription is ~0.00005 EUR/second (~0.09 EUR for
   a 30 min meeting). LLM summary costs fractions of a cent per meeting.
 - Recordings under `min_seconds` are automatically discarded.
+- If transcription is cancelled, the raw audio (`mic.wav`, `loopback.wav`)
+  is kept in the recording folder — even when `keep_audio` is false — so you
+  can finish it later with `python retranscribe.py "<recording folder>"`.
 - Two API keys are supported: `BERGET_API_KEY` for whisper,
   `BERGET_API_KEY2` for the LLM (falls back to `BERGET_API_KEY` if
   not set).
@@ -243,6 +246,15 @@ note at the top.
 ---
 
 ## Changelog
+
+### v1.4.1 (2026-06-04)
+- Fix: a long recording's save could take minutes while the icon still showed
+  red ("Recording"); clicking Stop again during that window cancelled
+  transcription and discarded the audio. The icon now shows "processing"
+  as soon as Stop is pressed, stray clicks during saving are ignored, and
+  cancelled transcriptions now **keep** the audio for recovery via
+  `retranscribe.py` instead of deleting it
+- Fix: leftover chunk WAV files are now cleaned up when transcription is cancelled
 
 ### v1.4.0 (2026-06-02)
 - One-step guided setup via `setup.bat`: checks Python, creates the
