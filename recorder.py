@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import time
 import wave
@@ -17,6 +18,7 @@ import threading
 import logging
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import numpy as np
 import pyaudiowpatch as pyaudio
@@ -190,6 +192,21 @@ def frames_to_wav(frames: list, rate: int, out_path: Path) -> float:
 CHUNK_SECONDS = 120  # 2 minutes per chunk
 MAX_RETRIES = 5
 RETRY_BASE_DELAY = 10  # seconds
+OFFLINE_POLL_SECONDS = 15  # how often to re-check connectivity while waiting
+
+
+def is_api_reachable(cfg: dict, timeout: float = 5.0) -> bool:
+    """Cheap online check: can we open a TCP connection to the API host?
+    Checks the actual transcription endpoint host rather than a generic
+    internet probe, since that is the connectivity that matters here."""
+    try:
+        parsed = urlparse(cfg["api_base_url"])
+        port = parsed.port or (80 if parsed.scheme == "http" else 443)
+        with socket.create_connection((parsed.hostname, port), timeout=timeout):
+            return True
+    except (OSError, ValueError):
+        # ValueError covers malformed api_base_url (bad port, missing scheme)
+        return False
 
 
 def _transcribe_file(audio_path: Path, client: OpenAI, cfg: dict) -> str:
@@ -434,21 +451,24 @@ class RecorderState:
 def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
                    state: RecorderState,
                    stop_recording: threading.Event,
-                   on_transcript=None, audio_levels=None, on_error=None):
+                   on_transcript=None, audio_levels=None, on_error=None,
+                   on_offline=None, on_online=None):
     """
     Record until stop_recording is set. Transcribe and save.
     Runs in a background thread.
     """
     try:
         _record_meeting_inner(p, client, cfg, state, stop_recording,
-                              on_transcript, audio_levels, on_error)
+                              on_transcript, audio_levels, on_error,
+                              on_offline, on_online)
     except Exception:
         log.exception("record_meeting crashed")
         state.set(RecorderState.IDLE)
 
 
 def _record_meeting_inner(p, client, cfg, state, stop_recording,
-                          on_transcript, audio_levels, on_error):
+                          on_transcript, audio_levels, on_error,
+                          on_offline, on_online):
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     folder = cfg["output_dir"] / ts
     folder.mkdir(parents=True, exist_ok=True)
@@ -528,6 +548,24 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
     log.info("Transcribing via API...")
 
     try:
+        # If the API host is unreachable (e.g. offline), tell the user right
+        # away and wait for connectivity instead of burning retries. Cancel
+        # works during the wait; the audio is already safe on disk.
+        if not is_api_reachable(cfg):
+            log.info("Offline - transcription postponed. Audio kept in: %s", folder)
+            if on_offline:
+                on_offline(str(folder))
+            while True:
+                for _ in range(OFFLINE_POLL_SECONDS):
+                    if stop_recording.is_set():
+                        raise TranscriptionCancelled()
+                    time.sleep(1)
+                if is_api_reachable(cfg):
+                    break
+            log.info("Back online - starting transcription")
+            if on_online:
+                on_online()
+
         mic_text = ""
         lb_text = ""
 

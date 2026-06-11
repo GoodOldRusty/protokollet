@@ -129,7 +129,9 @@ class TrayApp:
             args=(self.p, self.client, self.cfg, self.state,
                   self.stop_recording, self._on_transcript),
             kwargs={"audio_levels": self.audio_levels,
-                    "on_error": self._on_transcription_failed},
+                    "on_error": self._on_transcription_failed,
+                    "on_offline": self._on_offline,
+                    "on_online": self._on_online},
             daemon=True,
         )
         self.recording_thread.start()
@@ -157,6 +159,16 @@ class TrayApp:
             f"Your recording is kept in {Path(folder).name}.\n"
             "Run retranscribe.py when back online.",
         )
+
+    def _on_offline(self, folder: str):
+        notify(
+            "You're offline — recording saved",
+            "Transcription starts automatically when\n"
+            "you're back online (keep the app running).",
+        )
+
+    def _on_online(self):
+        notify("Back online", "Transcribing your meeting now...")
 
     def _is_idle(self, item):
         return self.state.status == RecorderState.IDLE

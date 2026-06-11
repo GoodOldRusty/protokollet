@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.4.2
+**Version:** 1.5.0
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -219,6 +219,14 @@ No — recording is always manual, by design. You decide when it captures.
 Only the audio is sent to berget.ai for transcription. See the privacy
 note at the top.
 
+**What happens if I'm offline when the meeting ends?**
+A notification tells you the recording is saved and that transcription
+will start automatically as soon as you're back online — as long as the
+app keeps running. The app checks every 15 seconds; you can also cancel
+the wait via **Cancel Transcription**. The audio is kept either way, and
+if the app is closed before you're back online you can finish the job
+with `retranscribe.py` (see Technical Notes).
+
 ---
 
 ## Technical Notes
@@ -232,6 +240,11 @@ note at the top.
 - **WASAPI loopback** captures all system audio, not just the meeting
   app. If other apps play audio during a call, it will be included in
   the "Others" stream.
+- **Offline detection** — when you stop a recording, a quick TCP check
+  against the API host decides whether to transcribe immediately or wait.
+  While waiting, connectivity is re-checked every 15 seconds and
+  transcription resumes automatically. New recordings can't start until
+  the wait finishes or is cancelled.
 - **Chunked transcription** — audio files are split into 2-minute
   chunks, converted to mp3, and sent individually with automatic retry.
   This avoids API timeouts on long recordings.
@@ -251,6 +264,13 @@ note at the top.
 ---
 
 ## Changelog
+
+### v1.5.0 (2026-06-11)
+- New: stopping a recording while offline now shows an immediate
+  notification that transcription is postponed, and it starts
+  automatically as soon as you're back online (connectivity is checked
+  every 15 seconds; **Cancel Transcription** works while waiting and the
+  audio is always kept)
 
 ### v1.4.2 (2026-06-11)
 - Fix: a failed transcription (for example when offline) now shows a

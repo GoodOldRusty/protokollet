@@ -4,7 +4,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.4.2
+**Version:** 1.5.0
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -224,6 +224,14 @@ bestämmer när det spelas in.
 Bara ljudet skickas till berget.ai för transkribering. Se noteringen om
 integritet högst upp.
 
+**Vad händer om jag är offline när mötet slutar?**
+En avisering berättar att inspelningen är sparad och att transkriberingen
+startar automatiskt så fort du är online igen — så länge programmet är
+igång. Programmet kollar var 15:e sekund; du kan också avbryta väntan via
+**Cancel Transcription**. Ljudet behålls oavsett, och stängs programmet
+innan du är online igen kan du slutföra med `retranscribe.py` (se
+Tekniska detaljer).
+
 ---
 
 ## Tekniska detaljer
@@ -237,6 +245,11 @@ integritet högst upp.
 - **WASAPI-loopback** fångar allt systemljud, inte bara mötesappen. Om
   andra program spelar ljud under samtalet hamnar det i
   "Others"-strömmen.
+- **Offlinedetektering** — när du stoppar en inspelning avgör en snabb
+  TCP-koll mot API-värden om transkriberingen startar direkt eller
+  väntar. Under väntan kollas anslutningen var 15:e sekund och
+  transkriberingen återupptas automatiskt. Nya inspelningar kan inte
+  startas förrän väntan är klar eller avbruten.
 - **Transkribering i bitar** — ljudfiler delas i 2-minutersbitar,
   konverteras till mp3 och skickas en i taget med automatiska
   omförsök. Det undviker API-timeouts vid långa inspelningar.
@@ -256,6 +269,12 @@ integritet högst upp.
 ---
 
 ## Ändringslogg
+
+### v1.5.0 (2026-06-11)
+- Nytt: stoppar du en inspelning utan internet visas direkt en avisering
+  om att transkriberingen väntar, och den startar automatiskt så fort du
+  är online igen (anslutningen kollas var 15:e sekund; **Cancel
+  Transcription** fungerar under väntan och ljudet behålls alltid)
 
 ### v1.4.2 (2026-06-11)
 - Fix: en misslyckad transkribering (till exempel utan internet) visar nu
