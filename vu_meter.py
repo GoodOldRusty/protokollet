@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Floating VU meter window for real-time audio level monitoring."""
+"""Floating recording pill: pulsing REC dot, elapsed time, live audio levels."""
 
+import ctypes
+import time
 import tkinter as tk
+from ctypes import wintypes
 
 
 class AudioLevels:
@@ -18,18 +21,30 @@ class AudioLevels:
         self.loopback_level = level
 
 
-# ── Colors ────────────────────────────────────────────────────
+# ── Look ──────────────────────────────────────────────────────
 
-BG = "#2b2b2b"
-LABEL_FG = "#cccccc"
-BAR_BG = "#444444"
+TRANSPARENT = "#010203"  # color key punched out of the window (rounded corners)
+PILL_BG = "#1e1e1e"
+PILL_BORDER = "#3a3a3a"
+LABEL_FG = "#9e9e9e"
+TEXT_FG = "#e0e0e0"
+BAR_BG = "#383838"
 GREEN = "#4caf50"
 YELLOW = "#ffeb3b"
 RED = "#f44336"
+RED_DIM = "#6e2a26"
 
-BAR_WIDTH = 200
-BAR_HEIGHT = 18
+WIDTH = 240
+HEIGHT = 66
+RADIUS = 14
+MARGIN = 16          # gap to the work-area corner
+BAR_X = 64
+BAR_WIDTH = WIDTH - BAR_X - 16
+BAR_HEIGHT = 5
+MIC_BAR_Y = 38
+LB_BAR_Y = 51
 POLL_MS = 50
+PULSE_POLLS = 12     # REC dot toggles every 12 polls (~0.6 s)
 
 
 def _level_color(level: float) -> str:
@@ -40,8 +55,28 @@ def _level_color(level: float) -> str:
     return GREEN
 
 
+def _work_area() -> tuple[int, int, int, int]:
+    """Desktop rectangle minus the taskbar: (left, top, right, bottom)."""
+    rect = wintypes.RECT()
+    if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+        return rect.left, rect.top, rect.right, rect.bottom
+    return 0, 0, 1920, 1040
+
+
+def _rounded_rect(canvas, x1, y1, x2, y2, r, **kwargs):
+    """Draw a rounded rectangle as a smoothed polygon. Returns the item id."""
+    points = [
+        x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
+        x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
+    ]
+    return canvas.create_polygon(points, smooth=True, **kwargs)
+
+
 class VuMeterWindow:
-    """Small floating always-on-top window with two VU meter bars.
+    """Frameless always-on-top recording pill docked above the tray corner.
+
+    Shows a pulsing REC dot, elapsed recording time, and live level bars for
+    the microphone and the other participants. Draggable with the mouse.
 
     All tkinter objects are created in run() which must be called from
     the thread that will own the mainloop. show()/hide()/stop() are
@@ -55,43 +90,64 @@ class VuMeterWindow:
         self._visible = False
         self._stopped = False
         self._polling = False
+        self._rec_start = 0.0
+        self._pulse_count = 0
+        self._pulse_on = True
 
     def _build(self):
         self._root = tk.Tk()
         self._root.withdraw()
-        self._root.title("Audio Levels")
+        self._root.overrideredirect(True)   # no title bar, no taskbar button
         self._root.attributes("-topmost", True)
-        self._root.attributes("-alpha", 0.85)
-        self._root.configure(bg=BG)
-        self._root.resizable(False, False)
-        self._root.geometry("270x60+20+20")
-        # Minimal window: disable close button, no min/max
-        self._root.protocol("WM_DELETE_WINDOW", lambda: None)
+        self._root.attributes("-alpha", 0.95)
+        # Everything painted in the key color becomes a hole in the window,
+        # which is what gives the pill its rounded corners.
+        self._root.configure(bg=TRANSPARENT)
+        self._root.attributes("-transparentcolor", TRANSPARENT)
 
-        frame = tk.Frame(self._root, bg=BG, padx=8, pady=6)
-        frame.pack(fill="both", expand=True)
+        left, top, right, bottom = _work_area()
+        x = right - WIDTH - MARGIN
+        y = bottom - HEIGHT - MARGIN
+        self._root.geometry(f"{WIDTH}x{HEIGHT}+{x}+{y}")
 
-        # Mic row
-        tk.Label(frame, text="MIC", fg=LABEL_FG, bg=BG,
-                 font=("Consolas", 9), width=3, anchor="w").grid(row=0, column=0)
-        self._mic_canvas = tk.Canvas(frame, width=BAR_WIDTH, height=BAR_HEIGHT,
-                                     bg=BAR_BG, highlightthickness=0)
-        self._mic_canvas.grid(row=0, column=1, padx=(4, 0))
-        self._mic_bar = self._mic_canvas.create_rectangle(0, 0, 0, BAR_HEIGHT, fill=GREEN)
+        c = tk.Canvas(self._root, width=WIDTH, height=HEIGHT,
+                      bg=TRANSPARENT, highlightthickness=0)
+        c.pack()
+        self._canvas = c
 
-        # Loopback row
-        tk.Label(frame, text="LB", fg=LABEL_FG, bg=BG,
-                 font=("Consolas", 9), width=3, anchor="w").grid(row=1, column=0, pady=(4, 0))
-        self._lb_canvas = tk.Canvas(frame, width=BAR_WIDTH, height=BAR_HEIGHT,
-                                    bg=BAR_BG, highlightthickness=0)
-        self._lb_canvas.grid(row=1, column=1, padx=(4, 0), pady=(4, 0))
-        self._lb_bar = self._lb_canvas.create_rectangle(0, 0, 0, BAR_HEIGHT, fill=GREEN)
+        _rounded_rect(c, 1, 1, WIDTH - 1, HEIGHT - 1, RADIUS,
+                      fill=PILL_BG, outline=PILL_BORDER)
+
+        # Header row: pulsing dot, REC label, elapsed timer
+        self._dot = c.create_oval(14, 12, 26, 24, fill=RED, outline="")
+        c.create_text(33, 18, text="REC", fill=TEXT_FG, anchor="w",
+                      font=("Segoe UI", 10, "bold"))
+        self._timer = c.create_text(WIDTH - 16, 18, text="00:00",
+                                    fill=TEXT_FG, anchor="e",
+                                    font=("Consolas", 11))
+
+        # Level rows
+        c.create_text(14, MIC_BAR_Y + 3, text="MIC", fill=LABEL_FG, anchor="w",
+                      font=("Segoe UI", 8))
+        c.create_rectangle(BAR_X, MIC_BAR_Y, BAR_X + BAR_WIDTH,
+                           MIC_BAR_Y + BAR_HEIGHT, fill=BAR_BG, outline="")
+        self._mic_bar = c.create_rectangle(BAR_X, MIC_BAR_Y, BAR_X,
+                                           MIC_BAR_Y + BAR_HEIGHT,
+                                           fill=GREEN, outline="")
+
+        c.create_text(14, LB_BAR_Y + 3, text="OTHERS", fill=LABEL_FG, anchor="w",
+                      font=("Segoe UI", 8))
+        c.create_rectangle(BAR_X, LB_BAR_Y, BAR_X + BAR_WIDTH,
+                           LB_BAR_Y + BAR_HEIGHT, fill=BAR_BG, outline="")
+        self._lb_bar = c.create_rectangle(BAR_X, LB_BAR_Y, BAR_X,
+                                          LB_BAR_Y + BAR_HEIGHT,
+                                          fill=GREEN, outline="")
 
         # Drag support
         self._drag_x = 0
         self._drag_y = 0
-        self._root.bind("<Button-1>", self._on_drag_start)
-        self._root.bind("<B1-Motion>", self._on_drag_motion)
+        c.bind("<Button-1>", self._on_drag_start)
+        c.bind("<B1-Motion>", self._on_drag_motion)
 
     def _on_drag_start(self, event):
         self._drag_x = event.x
@@ -102,17 +158,28 @@ class VuMeterWindow:
         y = self._root.winfo_y() + event.y - self._drag_y
         self._root.geometry(f"+{x}+{y}")
 
-    def _update_bar(self, canvas, bar_id, level: float):
+    def _update_bar(self, bar_id, y1, level: float):
         w = int(level * BAR_WIDTH)
-        color = _level_color(level)
-        canvas.coords(bar_id, 0, 0, w, BAR_HEIGHT)
-        canvas.itemconfig(bar_id, fill=color)
+        self._canvas.coords(bar_id, BAR_X, y1, BAR_X + w, y1 + BAR_HEIGHT)
+        self._canvas.itemconfig(bar_id, fill=_level_color(level))
 
     def _poll(self):
         if not self._polling:
             return
-        self._update_bar(self._mic_canvas, self._mic_bar, self._levels.mic_level)
-        self._update_bar(self._lb_canvas, self._lb_bar, self._levels.loopback_level)
+        self._update_bar(self._mic_bar, MIC_BAR_Y, self._levels.mic_level)
+        self._update_bar(self._lb_bar, LB_BAR_Y, self._levels.loopback_level)
+
+        elapsed = int(time.monotonic() - self._rec_start)
+        self._canvas.itemconfig(
+            self._timer, text=f"{elapsed // 60:02d}:{elapsed % 60:02d}")
+
+        self._pulse_count += 1
+        if self._pulse_count >= PULSE_POLLS:
+            self._pulse_count = 0
+            self._pulse_on = not self._pulse_on
+            self._canvas.itemconfig(
+                self._dot, fill=RED if self._pulse_on else RED_DIM)
+
         self._root.after(POLL_MS, self._poll)
 
     def _tick(self):
@@ -122,6 +189,12 @@ class VuMeterWindow:
             return
         if self._visible and not self._polling:
             self._polling = True
+            self._rec_start = time.monotonic()
+            self._pulse_count = 0
+            self._pulse_on = True
+            self._canvas.itemconfig(self._dot, fill=RED)
+            # Re-apply: some Tk builds drop overrideredirect after withdraw
+            self._root.overrideredirect(True)
             self._root.deiconify()
             self._poll()
         elif not self._visible and self._polling:

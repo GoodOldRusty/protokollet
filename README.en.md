@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.5.2
+**Version:** 1.6.0
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -77,10 +77,10 @@ When it says *"Setup complete!"* you're done.
 > them in a `docs/` folder, and uncomment the matching line below._
 
 <!-- ![The tray icon and right-click menu](docs/tray-menu.png) -->
-<!-- ![The floating VU meter during recording](docs/vu-meter.png) -->
+<!-- ![The recording pill during recording](docs/recording-pill.png) -->
 <!-- ![Example meeting notes output](docs/example-notes.png) -->
 
-Suggested captures: (1) the tray menu open, (2) the VU meter window while
+Suggested captures: (1) the tray menu open, (2) the recording pill while
 recording, (3) an example output `.md` file opened in an editor.
 
 ---
@@ -138,9 +138,10 @@ Right-click the tray icon for:
 - **Settings...** — opens `config.json` in your default editor
 - **Quit** — clean shutdown
 
-A floating VU meter window shows real-time mic and loopback levels
-during recording. A Windows notification appears when transcription
-is complete.
+While recording, a small always-on-top pill docked above the tray corner
+shows a pulsing **REC** indicator, the elapsed time, and live audio levels
+for your mic and the other participants — drag it anywhere you like. A
+Windows notification appears when transcription is complete.
 
 ### Configuration
 
@@ -254,8 +255,10 @@ kept so you can run `retranscribe.py` manually.
 - **Chunked transcription** — audio files are split into 2-minute
   chunks, converted to mp3, and sent individually with automatic retry.
   This avoids API timeouts on long recordings.
-- **VU meter** — a floating tkinter window displays real-time audio
-  levels for mic and loopback during recording.
+- **Recording pill** — a frameless always-on-top tkinter window (rounded
+  corners via a transparent color key) with a pulsing REC dot, elapsed
+  timer, and live level bars for mic and loopback; docked to the
+  bottom-right corner of the work area, draggable.
 - **API cost** — transcription is ~0.00005 EUR/second (~0.09 EUR for
   a 30 min meeting). LLM summary costs fractions of a cent per meeting.
 - Recordings under `min_seconds` are automatically discarded.
@@ -270,6 +273,12 @@ kept so you can run `retranscribe.py` manually.
 ---
 
 ## Changelog
+
+### v1.6.0 (2026-06-11)
+- New: the audio-levels window is now a recording pill — frameless and
+  dark, docked above the tray corner, with a pulsing REC dot, elapsed
+  recording time, and slim live level bars for mic and participants.
+  Still draggable
 
 ### v1.5.2 (2026-06-11)
 - New: a distinct orange tray state shows when the app is waiting for

@@ -4,7 +4,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.5.2
+**Version:** 1.6.0
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -80,10 +80,10 @@ När det står *"Setup complete!"* är du klar.
 > en `docs/`-mapp och avkommentera motsvarande rad nedan._
 
 <!-- ![Ikonen i systemfältet och högerklicksmenyn](docs/tray-menu.png) -->
-<!-- ![Den flytande VU-mätaren under inspelning](docs/vu-meter.png) -->
+<!-- ![Inspelningspanelen under inspelning](docs/recording-pill.png) -->
 <!-- ![Exempel på färdiga mötesanteckningar](docs/example-notes.png) -->
 
-Förslag på bilder: (1) menyn i systemfältet öppen, (2) VU-mätarfönstret
+Förslag på bilder: (1) menyn i systemfältet öppen, (2) inspelningspanelen
 under inspelning, (3) en färdig `.md`-fil öppnad i en editor.
 
 ---
@@ -142,9 +142,10 @@ Högerklicka på ikonen för:
 - **Settings...** — öppnar `config.json` i din standardeditor
 - **Quit** — avslutar programmet snyggt
 
-Ett flytande VU-mätarfönster visar ljudnivåer för mikrofon och loopback i
-realtid under inspelning. En Windows-avisering visas när transkriberingen
-är klar.
+Under inspelning visas en liten alltid-överst-panel dockad ovanför
+systemfältets hörn med en pulserande **REC**-indikator, förfluten tid och
+ljudnivåer i realtid för din mikrofon och övriga deltagare — dra den vart
+du vill. En Windows-avisering visas när transkriberingen är klar.
 
 ### Konfiguration
 
@@ -261,8 +262,10 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 - **Transkribering i bitar** — ljudfiler delas i 2-minutersbitar,
   konverteras till mp3 och skickas en i taget med automatiska
   omförsök. Det undviker API-timeouts vid långa inspelningar.
-- **VU-mätare** — ett flytande tkinter-fönster visar ljudnivåer för
-  mikrofon och loopback i realtid under inspelning.
+- **Inspelningspanel** — ett ramlöst alltid-överst tkinter-fönster
+  (rundade hörn via genomskinlig färgnyckel) med pulserande REC-prick,
+  tidräknare och nivåstaplar i realtid för mikrofon och loopback; dockat
+  i arbetsytans nedre högra hörn, flyttbart.
 - **API-kostnad** — transkribering kostar ca 0,00005 EUR/sekund
   (ca 0,09 EUR för ett 30-minutersmöte). LLM-sammanfattningen kostar
   bråkdelar av ett öre per möte.
@@ -277,6 +280,12 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 ---
 
 ## Ändringslogg
+
+### v1.6.0 (2026-06-11)
+- Nytt: ljudnivåfönstret är nu en inspelningspanel — ramlös och mörk,
+  dockad ovanför systemfältets hörn, med pulserande REC-prick, förfluten
+  inspelningstid och tunna nivåstaplar för mikrofon och deltagare.
+  Flyttbar som tidigare
 
 ### v1.5.2 (2026-06-11)
 - Nytt: ett eget orange ikonläge visar när programmet väntar på
