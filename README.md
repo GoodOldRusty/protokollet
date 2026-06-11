@@ -4,7 +4,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.5.0
+**Version:** 1.5.1
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -226,11 +226,12 @@ integritet högst upp.
 
 **Vad händer om jag är offline när mötet slutar?**
 En avisering berättar att inspelningen är sparad och att transkriberingen
-startar automatiskt så fort du är online igen — så länge programmet är
-igång. Programmet kollar var 15:e sekund; du kan också avbryta väntan via
-**Cancel Transcription**. Ljudet behålls oavsett, och stängs programmet
-innan du är online igen kan du slutföra med `retranscribe.py` (se
-Tekniska detaljer).
+startar automatiskt så fort du är online igen (kollas var 15:e sekund).
+Det överlever omstarter: stänger du programmet eller datorn innan dess
+plockas inspelningen upp och transkriberas nästa gång programmet startar.
+**Cancel Transcription** avbryter väntan — en avbruten inspelning
+transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
+`retranscribe.py` manuellt.
 
 ---
 
@@ -250,6 +251,11 @@ Tekniska detaljer).
   väntar. Under väntan kollas anslutningen var 15:e sekund och
   transkriberingen återupptas automatiskt. Nya inspelningar kan inte
   startas förrän väntan är klar eller avbruten.
+- **Väntemarkör** — en `.pending`-fil i inspelningsmappen markerar att en
+  transkribering återstår. Den tas bort vid lyckat resultat eller
+  avbrytning och behålls vid fel eller avstängning, så att programmet
+  återupptar ofärdiga transkriberingar vid nästa start. `retranscribe.py`
+  rensar den också.
 - **Transkribering i bitar** — ljudfiler delas i 2-minutersbitar,
   konverteras till mp3 och skickas en i taget med automatiska
   omförsök. Det undviker API-timeouts vid långa inspelningar.
@@ -269,6 +275,16 @@ Tekniska detaljer).
 ---
 
 ## Ändringslogg
+
+### v1.5.1 (2026-06-11)
+- Nytt: ofärdiga transkriberingar överlever nu omstarter. Inspelningar
+  som väntar på transkribering markeras på disk (`.pending`) och
+  återupptas automatiskt nästa gång programmet startar — till exempel om
+  du fäller ihop datorn medan du är offline. Avbrytning tar bort
+  markeringen (en avbruten inspelning transkriberas aldrig automatiskt);
+  `retranscribe.py` rensar den efter manuell återställning
+- Aviseringarna vid offline och fel ber dig inte längre hålla programmet
+  igång eller köra `retranscribe.py` — återställningen är automatisk
 
 ### v1.5.0 (2026-06-11)
 - Nytt: stoppar du en inspelning utan internet visas direkt en avisering

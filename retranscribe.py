@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from recorder import (
+    PENDING_MARKER,
     load_config,
     _transcribe_file,
     format_raw_transcript,
@@ -204,3 +205,7 @@ else:
 md_content = f"{heading}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
 md_path.write_text(md_content, encoding="utf-8")
 log.info("Transcript saved: %s", md_path)
+
+# Clear the pending marker so the tray app does not re-transcribe this
+# folder (and re-pay for it) at next start.
+(folder / PENDING_MARKER).unlink(missing_ok=True)

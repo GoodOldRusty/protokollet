@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.5.0
+**Version:** 1.5.1
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -221,11 +221,12 @@ note at the top.
 
 **What happens if I'm offline when the meeting ends?**
 A notification tells you the recording is saved and that transcription
-will start automatically as soon as you're back online — as long as the
-app keeps running. The app checks every 15 seconds; you can also cancel
-the wait via **Cancel Transcription**. The audio is kept either way, and
-if the app is closed before you're back online you can finish the job
-with `retranscribe.py` (see Technical Notes).
+starts automatically as soon as you're back online (checked every
+15 seconds). This survives restarts: if you close the app or shut the
+computer down first, the recording is picked up and transcribed the next
+time the app starts. **Cancel Transcription** cancels the wait — a
+cancelled recording is never transcribed automatically, but the audio is
+kept so you can run `retranscribe.py` manually.
 
 ---
 
@@ -245,6 +246,10 @@ with `retranscribe.py` (see Technical Notes).
   While waiting, connectivity is re-checked every 15 seconds and
   transcription resumes automatically. New recordings can't start until
   the wait finishes or is cancelled.
+- **Pending marker** — a `.pending` file in the recording folder marks a
+  transcription that is owed. It is removed on success or cancel and kept
+  on failure or shutdown, so the app resumes unfinished transcriptions at
+  the next start. `retranscribe.py` clears it too.
 - **Chunked transcription** — audio files are split into 2-minute
   chunks, converted to mp3, and sent individually with automatic retry.
   This avoids API timeouts on long recordings.
@@ -264,6 +269,15 @@ with `retranscribe.py` (see Technical Notes).
 ---
 
 ## Changelog
+
+### v1.5.1 (2026-06-11)
+- New: unfinished transcriptions now survive restarts. Recordings awaiting
+  transcription are marked on disk (`.pending`) and resume automatically
+  the next time the app starts — e.g. if you shut the laptop while
+  offline. Cancel removes the mark (a cancelled recording is never
+  auto-transcribed); `retranscribe.py` clears it after manual recovery
+- The offline and failure notifications no longer ask you to keep the app
+  running or run `retranscribe.py` — recovery is automatic
 
 ### v1.5.0 (2026-06-11)
 - New: stopping a recording while offline now shows an immediate

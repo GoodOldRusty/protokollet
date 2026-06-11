@@ -15,8 +15,10 @@ from openai import OpenAI
 
 from recorder import (
     RecorderState,
+    find_pending,
     load_config,
     record_meeting,
+    transcribe_folder,
 )
 from vu_meter import AudioLevels, VuMeterWindow
 
@@ -96,6 +98,7 @@ class TrayApp:
         self.audio_levels = AudioLevels()
         self.vu_window = None
         self.vu_thread = None
+        self.resume_thread = None
 
         self.state.on_change(self._on_state_change)
 
@@ -122,6 +125,10 @@ class TrayApp:
     def _start_recording(self):
         if self.state.status != RecorderState.IDLE:
             return
+        # The resume batch owns self.stop_recording; replacing it mid-batch
+        # would detach its cancel handling. Block new recordings until done.
+        if self.resume_thread and self.resume_thread.is_alive():
+            return
 
         self.stop_recording = threading.Event()
         self.recording_thread = threading.Thread(
@@ -143,7 +150,11 @@ class TrayApp:
             self.stop_recording.set()
 
     def _quit(self):
-        if self.stop_recording:
+        # Signal stop only while recording (gives the save a chance). While
+        # transcribing, stop means "cancel" and would remove the pending
+        # marker — quit must leave the marker so the work resumes at next
+        # start; the daemon thread dies with the process either way.
+        if self.stop_recording and self.state.status == RecorderState.RECORDING:
             self.stop_recording.set()
         if self.vu_window:
             self.vu_window.stop()
@@ -157,18 +168,40 @@ class TrayApp:
         notify(
             "Transcription failed — audio saved",
             f"Your recording is kept in {Path(folder).name}.\n"
-            "Run retranscribe.py when back online.",
+            "It will be retried next time the app starts.",
         )
 
     def _on_offline(self, folder: str):
         notify(
             "You're offline — recording saved",
-            "Transcription starts automatically when\n"
-            "you're back online (keep the app running).",
+            "Transcription starts automatically\n"
+            "when you're back online.",
         )
 
     def _on_online(self):
         notify("Back online", "Transcribing your meeting now...")
+
+    def _resume_pending(self, folders):
+        try:
+            for folder in folders:
+                if self.stop_recording.is_set():
+                    # Cancel stops the batch; untouched folders keep their
+                    # pending marker and are picked up at the next app start.
+                    log.info("Resume cancelled - remaining folders left for next start")
+                    break
+                self.state.set(RecorderState.TRANSCRIBING)
+                try:
+                    transcribe_folder(folder, self.client, self.cfg, self.state,
+                                      self.stop_recording,
+                                      on_transcript=self._on_transcript,
+                                      on_error=self._on_transcription_failed,
+                                      on_offline=self._on_offline,
+                                      on_online=self._on_online)
+                except Exception:
+                    # Marker stays; this folder is retried at next start.
+                    log.exception("Resume of %s crashed", folder)
+        finally:
+            self.state.set(RecorderState.IDLE)
 
     def _is_idle(self, item):
         return self.state.status == RecorderState.IDLE
@@ -252,6 +285,23 @@ class TrayApp:
         # Run pystray in a background thread so tkinter can have the main thread
         tray_thread = threading.Thread(target=self.icon.run, daemon=True)
         tray_thread.start()
+
+        # Resume transcriptions that never finished (e.g. the app was closed
+        # while offline). Started after the tray icon so state changes show.
+        pending = find_pending(self.cfg)
+        if pending:
+            log.info("Resuming %d pending transcription(s)", len(pending))
+            notify(
+                "Unfinished recordings found",
+                f"{len(pending)} recording(s) from earlier will be transcribed.",
+            )
+            # Enter TRANSCRIBING before the thread spawns so a Start Recording
+            # click can never slip in between.
+            self.state.set(RecorderState.TRANSCRIBING)
+            self.stop_recording = threading.Event()
+            self.resume_thread = threading.Thread(
+                target=self._resume_pending, args=(pending,), daemon=True)
+            self.resume_thread.start()
 
         # Tkinter requires the main thread on Windows
         self.vu_window = VuMeterWindow(self.audio_levels)

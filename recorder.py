@@ -194,6 +194,11 @@ MAX_RETRIES = 5
 RETRY_BASE_DELAY = 10  # seconds
 OFFLINE_POLL_SECONDS = 15  # how often to re-check connectivity while waiting
 
+# Marker file for a recording that is owed a transcription. Created when
+# transcription is about to start, removed on success or deliberate cancel,
+# kept on failure/shutdown so the next app start can resume the work.
+PENDING_MARKER = ".pending"
+
 
 def is_api_reachable(cfg: dict, timeout: float = 5.0) -> bool:
     """Cheap online check: can we open a TCP connection to the API host?
@@ -424,6 +429,26 @@ def title_to_filename(title: str, ts: str) -> str:
     return f"{ts}_transcript.md"
 
 
+def find_pending(cfg: dict) -> list[Path]:
+    """Recording folders whose transcription never finished: pending marker
+    present and audio still on disk. Stale markers without audio are removed."""
+    out_dir = Path(cfg["output_dir"])
+    pending = []
+    if not out_dir.exists():
+        return pending
+    for marker in sorted(out_dir.glob(f"*/{PENDING_MARKER}")):
+        folder = marker.parent
+        has_audio = (folder / "mic.wav").exists() or (folder / "loopback.wav").exists()
+        has_transcript = any(folder.glob("*.md"))
+        if has_audio and not has_transcript:
+            pending.append(folder)
+        else:
+            # Stale marker: audio is gone, or a transcript already exists
+            # (e.g. the marker unlink failed right after a successful save).
+            marker.unlink(missing_ok=True)
+    return pending
+
+
 # ── State ─────────────────────────────────────────────────────
 
 
@@ -446,6 +471,122 @@ class RecorderState:
         self._listeners.append(fn)
 
 # ── Recording session ─────────────────────────────────────────
+
+
+def transcribe_folder(folder: Path, client: OpenAI, cfg: dict,
+                      state: RecorderState, stop_recording: threading.Event,
+                      on_transcript=None, on_error=None,
+                      on_offline=None, on_online=None):
+    """Transcribe a recording folder (mic.wav/loopback.wav) into a meeting
+    transcript. Shared by the live recording flow and the startup resume of
+    pending recordings. Waits for connectivity if offline, supports cancel,
+    and maintains the pending marker: removed on success or cancel, kept on
+    failure so the next app start retries automatically."""
+    mic_wav = folder / "mic.wav"
+    lb_wav = folder / "loopback.wav"
+    md_path = folder / "transcript.md"
+    ts = folder.name  # folder is named with the recording timestamp
+
+    try:
+        # If the API host is unreachable (e.g. offline), tell the user right
+        # away and wait for connectivity instead of burning retries. Cancel
+        # works during the wait; the audio is already safe on disk.
+        if not is_api_reachable(cfg):
+            log.info("Offline - transcription postponed. Audio kept in: %s", folder)
+            if on_offline:
+                on_offline(str(folder))
+            while True:
+                for _ in range(OFFLINE_POLL_SECONDS):
+                    if stop_recording.is_set():
+                        raise TranscriptionCancelled()
+                    time.sleep(1)
+                if is_api_reachable(cfg):
+                    break
+            log.info("Back online - starting transcription")
+            if on_online:
+                on_online()
+
+        mic_text = ""
+        lb_text = ""
+
+        if mic_wav.exists() and mic_wav.stat().st_size > 44:  # > bare WAV header = has frames
+            mic_text = transcribe_stream(mic_wav, client, cfg,
+                                         cancel_event=stop_recording)
+        else:
+            log.info("Mic stream empty - skipping transcription")
+
+        if stop_recording.is_set():
+            raise TranscriptionCancelled()
+
+        if lb_wav.exists() and lb_wav.stat().st_size > 44:
+            lb_text = transcribe_stream(lb_wav, client, cfg,
+                                        cancel_event=stop_recording)
+        else:
+            log.info("Loopback stream empty - skipping transcription")
+
+        if stop_recording.is_set():
+            raise TranscriptionCancelled()
+
+        my_name = cfg.get("my_name", "Me")
+        raw_transcript = format_raw_transcript(mic_text, lb_text, my_name)
+
+        log.info("Summarizing with LLM...")
+        ts_label = datetime.now().strftime("%Y-%m-%d %H:%M")
+        title = ""
+        try:
+            raw_summary = summarize_transcript(raw_transcript, cfg)
+            title, summary = parse_title_from_summary(raw_summary)
+        except Exception:
+            log.exception("LLM summarization failed - saving raw transcript only")
+            summary = "*Sammanfattning kunde inte genereras (LLM-fel). Kör retranscribe.py för att försöka igen.*"
+
+        if title:
+            md_path = folder / title_to_filename(title, ts)
+            heading = f"# {title} — {ts_label}"
+        else:
+            heading = f"# Mötesprotokoll {ts_label}"
+
+        md_content = f"{heading}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
+        md_path.write_text(md_content, encoding="utf-8")
+        log.info("Transcript saved: %s", md_path)
+
+        try:
+            (folder / PENDING_MARKER).unlink(missing_ok=True)
+        except OSError:
+            # A locked marker is harmless: find_pending treats folders that
+            # already have a transcript as done and cleans the marker then.
+            log.warning("Could not remove pending marker in %s", folder)
+
+        if not cfg["keep_audio"]:
+            mic_wav.unlink(missing_ok=True)
+            lb_wav.unlink(missing_ok=True)
+            log.info("Audio files deleted.")
+
+        state.set(RecorderState.IDLE)
+
+        if on_transcript:
+            on_transcript(str(md_path))
+
+    except TranscriptionCancelled:
+        # Keep the audio (even if keep_audio is false) so a cancelled meeting
+        # can be recovered rather than lost, but drop the pending marker:
+        # cancel means "don't transcribe this automatically".
+        try:
+            (folder / PENDING_MARKER).unlink(missing_ok=True)
+        except OSError:
+            log.warning("Could not remove pending marker in %s", folder)
+        log.info("Transcription cancelled. Audio kept in: %s", folder)
+        log.info("To finish it later, run: python retranscribe.py \"%s\"", folder)
+        state.set(RecorderState.IDLE)
+    except Exception:
+        # API/network failures land here. The audio is already on disk and
+        # the pending marker is kept, so the next app start retries this
+        # folder automatically.
+        log.exception("Transcription failed. Audio kept in: %s", folder)
+        log.info("To finish it later, run: python retranscribe.py \"%s\"", folder)
+        state.set(RecorderState.IDLE)
+        if on_error:
+            on_error(str(folder))
 
 
 def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
@@ -474,7 +615,6 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
     folder.mkdir(parents=True, exist_ok=True)
     mic_wav = folder / "mic.wav"
     lb_wav = folder / "loopback.wav"
-    md_path = folder / "transcript.md"
 
     try:
         loopback = get_loopback_device(p)
@@ -547,92 +687,10 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
     stop_recording.clear()
     log.info("Transcribing via API...")
 
-    try:
-        # If the API host is unreachable (e.g. offline), tell the user right
-        # away and wait for connectivity instead of burning retries. Cancel
-        # works during the wait; the audio is already safe on disk.
-        if not is_api_reachable(cfg):
-            log.info("Offline - transcription postponed. Audio kept in: %s", folder)
-            if on_offline:
-                on_offline(str(folder))
-            while True:
-                for _ in range(OFFLINE_POLL_SECONDS):
-                    if stop_recording.is_set():
-                        raise TranscriptionCancelled()
-                    time.sleep(1)
-                if is_api_reachable(cfg):
-                    break
-            log.info("Back online - starting transcription")
-            if on_online:
-                on_online()
+    # Mark the folder as awaiting transcription. The marker survives crashes
+    # and shutdowns, so unfinished work is found and resumed at next start.
+    (folder / PENDING_MARKER).touch()
 
-        mic_text = ""
-        lb_text = ""
-
-        if mic_duration > 0:
-            mic_text = transcribe_stream(mic_wav, client, cfg,
-                                         cancel_event=stop_recording)
-        else:
-            log.info("Mic stream empty - skipping transcription")
-
-        if stop_recording.is_set():
-            raise TranscriptionCancelled()
-
-        if lb_duration > 0:
-            lb_text = transcribe_stream(lb_wav, client, cfg,
-                                         cancel_event=stop_recording)
-        else:
-            log.info("Loopback stream empty - skipping transcription")
-
-        if stop_recording.is_set():
-            raise TranscriptionCancelled()
-
-        my_name = cfg.get("my_name", "Me")
-        raw_transcript = format_raw_transcript(mic_text, lb_text, my_name)
-
-        log.info("Summarizing with LLM...")
-        ts_label = datetime.now().strftime("%Y-%m-%d %H:%M")
-        title = ""
-        try:
-            raw_summary = summarize_transcript(raw_transcript, cfg)
-            title, summary = parse_title_from_summary(raw_summary)
-        except Exception:
-            log.exception("LLM summarization failed - saving raw transcript only")
-            summary = "*Sammanfattning kunde inte genereras (LLM-fel). Kör retranscribe.py för att försöka igen.*"
-
-        if title:
-            md_path = folder / title_to_filename(title, ts)
-            heading = f"# {title} — {ts_label}"
-        else:
-            heading = f"# Mötesprotokoll {ts_label}"
-
-        md_content = f"{heading}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
-        md_path.write_text(md_content, encoding="utf-8")
-        log.info("Transcript saved: %s", md_path)
-
-        if not cfg["keep_audio"]:
-            mic_wav.unlink(missing_ok=True)
-            lb_wav.unlink(missing_ok=True)
-            log.info("Audio files deleted.")
-
-        state.set(RecorderState.IDLE)
-
-        if on_transcript:
-            on_transcript(str(md_path))
-
-    except TranscriptionCancelled:
-        # Keep the audio (even if keep_audio is false) so a cancelled meeting
-        # can be recovered rather than lost. Temporary chunk/mp3 files were
-        # cleaned up by transcribe_stream; only mic.wav/loopback.wav remain.
-        log.info("Transcription cancelled. Audio kept in: %s", folder)
-        log.info("To finish it later, run: python retranscribe.py \"%s\"", folder)
-        state.set(RecorderState.IDLE)
-    except Exception:
-        # API/network failures (e.g. offline) land here. The audio is already
-        # on disk and is deliberately kept — deletion only happens on the
-        # success path above — so the meeting can be recovered later.
-        log.exception("Transcription failed. Audio kept in: %s", folder)
-        log.info("To finish it later, run: python retranscribe.py \"%s\"", folder)
-        state.set(RecorderState.IDLE)
-        if on_error:
-            on_error(str(folder))
+    transcribe_folder(folder, client, cfg, state, stop_recording,
+                      on_transcript=on_transcript, on_error=on_error,
+                      on_offline=on_offline, on_online=on_online)
