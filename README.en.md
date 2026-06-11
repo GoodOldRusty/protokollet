@@ -14,13 +14,18 @@ records both your microphone and the other participants, transcribes the
 conversation, and saves tidy meeting notes (summary, decisions, and action
 items) as a text file you can read in any editor.
 
-It is built for Swedish meetings (using a Swedish-optimised speech model)
-but works for other languages too. No GPU or special hardware is needed.
+It is built for Swedish meetings: transcription is done by
+[KB-Whisper](https://huggingface.co/KBLab/kb-whisper-large), the National
+Library of Sweden's speech model trained on 50,000+ hours of Swedish
+speech — made for how Swedish actually sounds, dialects included. Other
+languages work too. No GPU or special hardware is needed.
 
 > **Privacy note:** Your audio is sent to the [berget.ai](https://berget.ai)
 > service for transcription and summarisation. Nothing is uploaded anywhere
-> else, and recordings stay on your computer. Once transcription is
-> complete, the recording is deleted. Only use this for meetings you are
+> else, and recordings stay on your computer. With the default setting
+> (`keep_audio: false`) the audio files are deleted once transcription
+> completes; if transcription is cancelled or fails, the audio is kept so
+> the recording can be recovered. Only use this for meetings you are
 > allowed to record — check local rules and tell participants.
 
 ---
@@ -205,6 +210,19 @@ during meetings.
 **Do I need a powerful computer?**
 No. All the heavy processing happens on berget.ai's servers. Any modern
 Windows PC works.
+
+**Why not just use the transcription built into Teams or Zoom?**
+Three honest differences. The model:
+[KB-Whisper](https://huggingface.co/KBLab/kb-whisper-large) is built by
+[KBLab](https://kb-labb.github.io/posts/2025-03-07-welcome-KB-Whisper/) at
+the National Library of Sweden and trained on 50,000+ hours of Swedish
+speech — in KBLab's evaluations it roughly halves the word error rate on
+Swedish compared to OpenAI's whisper-large-v3. Independence: recording is
+local (mic + system audio), so it works with any meeting tool — Teams,
+Zoom, Google Meet, a phone on speaker, or a room full of people — with no
+admin settings or extra licenses. And the result is a finished protokoll
+with decisions and action items, processed on Swedish infrastructure
+([berget.ai](https://berget.ai)) — not a caption stream.
 
 **Does it cost money?**
 The app is free. berget.ai charges a small amount per minute of audio

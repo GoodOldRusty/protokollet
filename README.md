@@ -13,13 +13,18 @@ spelar in både din mikrofon och övriga deltagare, transkriberar samtalet
 och sparar prydliga mötesanteckningar (sammanfattning, beslut och
 åtgärdspunkter) som en textfil du kan läsa i valfri editor.
 
-Det är byggt för svenska möten (med en svenskoptimerad taligenkänningsmodell)
-men fungerar även för andra språk. Ingen GPU eller speciell hårdvara behövs.
+Det är byggt för svenska möten: transkriberingen görs av
+[KB-Whisper](https://huggingface.co/KBLab/kb-whisper-large), Kungliga
+bibliotekets taligenkänningsmodell tränad på över 50 000 timmar svenskt
+tal — gjord för hur svenska faktiskt låter, dialekter inräknade. Andra
+språk fungerar också. Ingen GPU eller speciell hårdvara behövs.
 
 > **Om integritet:** Ditt ljud skickas till tjänsten
 > [berget.ai](https://berget.ai) för transkribering och sammanfattning.
 > Inget laddas upp någon annanstans, och inspelningarna stannar på din
-> dator. När transkriberingen är klar tas inspelningen bort.
+> dator. Med standardinställningen (`keep_audio: false`) raderas
+> ljudfilerna när transkriberingen är klar; avbryts eller misslyckas
+> transkriberingen behålls ljudet så att inspelningen kan räddas.
 > Använd bara programmet för möten du får spela in — kolla vilka
 > regler som gäller och berätta för deltagarna.
 
@@ -208,6 +213,20 @@ Loopback fångar *allt* systemljud. Stäng av ljudet i andra program
 **Behöver jag en kraftfull dator?**
 Nej. All tung bearbetning sker på berget.ai:s servrar. Vilken modern
 Windows-dator som helst fungerar.
+
+**Varför inte bara använda transkriberingen som är inbyggd i Teams eller Zoom?**
+Tre ärliga skillnader. Modellen:
+[KB-Whisper](https://huggingface.co/KBLab/kb-whisper-large) är byggd av
+[KBLab](https://kb-labb.github.io/posts/2025-03-07-welcome-KB-Whisper/) på
+Kungliga biblioteket och tränad på över 50 000 timmar svenskt tal — i
+KBLab:s utvärderingar ungefär halveras felfrekvensen på svenska jämfört
+med OpenAI:s whisper-large-v3. Oberoendet: inspelningen sker lokalt
+(mikrofon + systemljud) och fungerar därför med vilket mötesverktyg som
+helst — Teams, Zoom, Google Meet, en telefon på högtalare eller ett rum
+fullt av människor — utan admininställningar eller extra licenser. Och
+resultatet är ett färdigt protokoll med beslut och åtgärdspunkter,
+bearbetat på svensk infrastruktur ([berget.ai](https://berget.ai)) — inte
+en undertextström.
 
 **Kostar det pengar?**
 Programmet är gratis. berget.ai tar en liten slant per minut ljud (se
