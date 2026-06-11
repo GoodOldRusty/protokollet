@@ -286,6 +286,8 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
   när transkriberingstjänsten slutade svara mitt i ett anrop. API-anrop
   får nu en timeout på 60 sekunder och alla omförsök sköts av programmets
   egen avbrytbara omförsökslogik
+- Fix: en mapp som redan innehåller ett protokoll transkriberas aldrig om
+  vid uppstart, även om väntemarkören blivit kvar
 
 ### v1.6.0 (2026-06-11)
 - Nytt: ljudnivåfönstret är nu en inspelningspanel — ramlös och mörk,

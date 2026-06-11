@@ -279,6 +279,8 @@ kept so you can run `retranscribe.py` manually.
   when the transcription service stopped answering mid-request. API calls
   now time out after 60 seconds and retrying is handled entirely by the
   app's own cancellable retry loop
+- Fix: a folder that already contains a transcript is never re-transcribed
+  at startup, even if its pending marker was left behind
 
 ### v1.6.0 (2026-06-11)
 - New: the audio-levels window is now a recording pill — frameless and

@@ -433,7 +433,8 @@ def title_to_filename(title: str, ts: str) -> str:
 
 def find_pending(cfg: dict) -> list[Path]:
     """Recording folders whose transcription never finished: pending marker
-    present and audio still on disk. Stale markers without audio are removed."""
+    present, audio still on disk, and no transcript yet. Stale markers
+    (audio gone, or a transcript already saved) are removed."""
     out_dir = Path(cfg["output_dir"])
     pending = []
     if not out_dir.exists():
