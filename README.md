@@ -81,15 +81,20 @@ När det står *"Setup complete!"* är du klar.
 
 ## Skärmbilder
 
-> 📷 _Det här är platshållare. Ta bilderna på din egen dator, spara dem i
-> en `docs/`-mapp och avkommentera motsvarande rad nedan._
+![Högerklicksmenyn i systemfältet](docs/program.png)
 
-<!-- ![Ikonen i systemfältet och högerklicksmenyn](docs/tray-menu.png) -->
-<!-- ![Inspelningspanelen under inspelning](docs/recording-pill.png) -->
+*Menyn i systemfältet — att spela in är två klick.*
+
+![Inspelningspanelen under inspelning](docs/levels.png)
+
+*Inspelningspanelen: pulserande REC, förfluten tid och ljudnivåer i
+realtid för dig och övriga deltagare.*
+
+![Ikonen i systemfältet under inspelning och transkribering](docs/thumbnail.png)
+
+*Ikonen blir röd under inspelning och blå under transkribering.*
+
 <!-- ![Exempel på färdiga mötesanteckningar](docs/example-notes.png) -->
-
-Förslag på bilder: (1) menyn i systemfältet öppen, (2) inspelningspanelen
-under inspelning, (3) en färdig `.md`-fil öppnad i en editor.
 
 ---
 

@@ -79,15 +79,20 @@ When it says *"Setup complete!"* you're done.
 
 ## Screenshots
 
-> 📷 _These are placeholders. Capture the images on your own machine, save
-> them in a `docs/` folder, and uncomment the matching line below._
+![The tray icon's right-click menu](docs/program.png)
 
-<!-- ![The tray icon and right-click menu](docs/tray-menu.png) -->
-<!-- ![The recording pill during recording](docs/recording-pill.png) -->
+*The tray menu — recording is two clicks.*
+
+![The recording pill during recording](docs/levels.png)
+
+*The recording pill: pulsing REC, elapsed time, live levels for you and
+the other participants.*
+
+![Tray icon while recording and transcribing](docs/thumbnail.png)
+
+*The tray icon turns red while recording and blue while transcribing.*
+
 <!-- ![Example meeting notes output](docs/example-notes.png) -->
-
-Suggested captures: (1) the tray menu open, (2) the recording pill while
-recording, (3) an example output `.md` file opened in an editor.
 
 ---
 
