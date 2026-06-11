@@ -1,6 +1,5 @@
 # protokollet
 
-*§1: mötets öppnande — klicka Start. En mötesinspelare för Windows som spelar in, transkriberar och skriver protokollet åt dig.*
 
 *Read this in [English](README.en.md).*
 
@@ -20,7 +19,8 @@ men fungerar även för andra språk. Ingen GPU eller speciell hårdvara behövs
 > **Om integritet:** Ditt ljud skickas till tjänsten
 > [berget.ai](https://berget.ai) för transkribering och sammanfattning.
 > Inget laddas upp någon annanstans, och inspelningarna stannar på din
-> dator. Använd bara programmet för möten du får spela in — kolla vilka
+> dator. När transkriberinge när klar tas inspelningen bort.
+> Använd bara programmet för möten du får spela in — kolla vilka
 > regler som gäller och berätta för deltagarna.
 
 ---
