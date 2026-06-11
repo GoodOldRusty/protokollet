@@ -83,12 +83,12 @@ När det står *"Setup complete!"* är du klar.
 
 ![Högerklicksmenyn i systemfältet](docs/program.png)
 
-*Menyn i systemfältet — att spela in är två klick.*
+*Menyn i systemfältet. Högerklicka och tryck på "Start Recording"*
 
 ![Inspelningspanelen under inspelning](docs/levels.png)
 
-*Inspelningspanelen: pulserande REC, förfluten tid och ljudnivåer i
-realtid för dig och övriga deltagare.*
+*Inspelningspanelen: pulserande REC-ring, förfluten tid och ljudnivåer i
+realtid för mic och övriga deltagare.*
 
 ![Ikonen i systemfältet under inspelning och transkribering](docs/thumbnail.png)
 
