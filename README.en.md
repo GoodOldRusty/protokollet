@@ -19,8 +19,9 @@ but works for other languages too. No GPU or special hardware is needed.
 
 > **Privacy note:** Your audio is sent to the [berget.ai](https://berget.ai)
 > service for transcription and summarisation. Nothing is uploaded anywhere
-> else, and recordings stay on your computer. Only use this for meetings you
-> are allowed to record — check local rules and tell participants.
+> else, and recordings stay on your computer. Once transcription is
+> complete, the recording is deleted. Only use this for meetings you are
+> allowed to record — check local rules and tell participants.
 
 ---
 
