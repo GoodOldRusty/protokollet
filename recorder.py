@@ -457,6 +457,7 @@ class RecorderState:
     IDLE = "idle"
     RECORDING = "recording"
     TRANSCRIBING = "transcribing"
+    WAITING = "waiting"  # offline - transcription queued until back online
 
     def __init__(self):
         self.status = self.IDLE
@@ -493,6 +494,7 @@ def transcribe_folder(folder: Path, client: OpenAI, cfg: dict,
         # works during the wait; the audio is already safe on disk.
         if not is_api_reachable(cfg):
             log.info("Offline - transcription postponed. Audio kept in: %s", folder)
+            state.set(RecorderState.WAITING)
             if on_offline:
                 on_offline(str(folder))
             while True:
@@ -503,6 +505,7 @@ def transcribe_folder(folder: Path, client: OpenAI, cfg: dict,
                 if is_api_reachable(cfg):
                     break
             log.info("Back online - starting transcription")
+            state.set(RecorderState.TRANSCRIBING)
             if on_online:
                 on_online()
 

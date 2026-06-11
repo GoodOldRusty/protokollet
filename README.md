@@ -4,7 +4,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.5.1
+**Version:** 1.5.2
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -128,11 +128,12 @@ under inspelning, (3) en färdig `.md`-fil öppnad i en editor.
 
 ### Systemfältet
 
-| Ikonfärg | Betydelse      |
-| -------- | -------------- |
-| Grå      | Redo           |
-| Röd      | Spelar in      |
-| Blå      | Transkriberar  |
+| Ikonfärg | Betydelse                                      |
+| -------- | ---------------------------------------------- |
+| Grå      | Redo                                           |
+| Röd      | Spelar in                                      |
+| Blå      | Transkriberar                                  |
+| Orange   | Väntar på anslutning (transkribering i kö)     |
 
 Högerklicka på ikonen för:
 - **Start Recording** / **Stop Recording** — manuell kontroll
@@ -226,7 +227,8 @@ integritet högst upp.
 
 **Vad händer om jag är offline när mötet slutar?**
 En avisering berättar att inspelningen är sparad och att transkriberingen
-startar automatiskt så fort du är online igen (kollas var 15:e sekund).
+startar automatiskt så fort du är online igen (kollas var 15:e sekund) —
+ikonen i systemfältet är orange under väntan.
 Det överlever omstarter: stänger du programmet eller datorn innan dess
 plockas inspelningen upp och transkriberas nästa gång programmet startar.
 **Cancel Transcription** avbryter väntan — en avbruten inspelning
@@ -275,6 +277,13 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 ---
 
 ## Ändringslogg
+
+### v1.5.2 (2026-06-11)
+- Nytt: ett eget orange ikonläge visar när programmet väntar på
+  internetanslutning (gick tidigare inte att skilja från transkribering),
+  och verktygstipset visar hur många inspelningar som står i kö vid en
+  återupptagning. **Cancel Transcription** fungerar även i det orangea
+  läget
 
 ### v1.5.1 (2026-06-11)
 - Nytt: ofärdiga transkriberingar överlever nu omstarter. Inspelningar

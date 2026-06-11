@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.5.1
+**Version:** 1.5.2
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -124,11 +124,12 @@ recording, (3) an example output `.md` file opened in an editor.
 
 ### System Tray
 
-| Icon Color | Meaning        |
-| ---------- | -------------- |
-| Grey       | Ready          |
-| Red        | Recording      |
-| Blue       | Transcribing   |
+| Icon Color | Meaning                                          |
+| ---------- | ------------------------------------------------ |
+| Grey       | Ready                                            |
+| Red        | Recording                                        |
+| Blue       | Transcribing                                     |
+| Orange     | Waiting for connection (transcription queued)    |
 
 Right-click the tray icon for:
 - **Start Recording** / **Stop Recording** — manual control
@@ -222,7 +223,7 @@ note at the top.
 **What happens if I'm offline when the meeting ends?**
 A notification tells you the recording is saved and that transcription
 starts automatically as soon as you're back online (checked every
-15 seconds). This survives restarts: if you close the app or shut the
+15 seconds) — the tray icon shows orange while waiting. This survives restarts: if you close the app or shut the
 computer down first, the recording is picked up and transcribed the next
 time the app starts. **Cancel Transcription** cancels the wait — a
 cancelled recording is never transcribed automatically, but the audio is
@@ -269,6 +270,12 @@ kept so you can run `retranscribe.py` manually.
 ---
 
 ## Changelog
+
+### v1.5.2 (2026-06-11)
+- New: a distinct orange tray state shows when the app is waiting for
+  connectivity (previously indistinguishable from transcribing), and the
+  tray tooltip shows how many recordings are queued during a startup
+  resume. **Cancel Transcription** is available in the orange state too
 
 ### v1.5.1 (2026-06-11)
 - New: unfinished transcriptions now survive restarts. Recordings awaiting

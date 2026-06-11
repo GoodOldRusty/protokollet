@@ -30,12 +30,14 @@ COLORS = {
     RecorderState.IDLE: "#888888",
     RecorderState.RECORDING: "#e53935",
     RecorderState.TRANSCRIBING: "#1e88e5",
+    RecorderState.WAITING: "#fb8c00",
 }
 
 STATUS_LABELS = {
     RecorderState.IDLE: "Ready",
     RecorderState.RECORDING: "Recording...",
     RecorderState.TRANSCRIBING: "Transcribing...",
+    RecorderState.WAITING: "Waiting for connection...",
 }
 
 
@@ -99,13 +101,18 @@ class TrayApp:
         self.vu_window = None
         self.vu_thread = None
         self.resume_thread = None
+        self.pending_count = 0
 
         self.state.on_change(self._on_state_change)
 
     def _on_state_change(self, status: str):
         if self.icon:
+            label = STATUS_LABELS[status]
+            if self.pending_count > 1 and status in (
+                    RecorderState.TRANSCRIBING, RecorderState.WAITING):
+                label += f" ({self.pending_count} queued)"
             self.icon.icon = create_icon_image(COLORS[status])
-            self.icon.title = f"Meeting Recorder - {STATUS_LABELS[status]}"
+            self.icon.title = f"Meeting Recorder - {label}"
             self.icon.update_menu()
         if self.vu_window:
             if status == RecorderState.RECORDING:
@@ -144,7 +151,9 @@ class TrayApp:
         self.recording_thread.start()
 
     def _stop_recording(self):
-        if self.state.status not in (RecorderState.RECORDING, RecorderState.TRANSCRIBING):
+        if self.state.status not in (RecorderState.RECORDING,
+                                     RecorderState.TRANSCRIBING,
+                                     RecorderState.WAITING):
             return
         if self.stop_recording:
             self.stop_recording.set()
@@ -183,12 +192,13 @@ class TrayApp:
 
     def _resume_pending(self, folders):
         try:
-            for folder in folders:
+            for i, folder in enumerate(folders):
                 if self.stop_recording.is_set():
                     # Cancel stops the batch; untouched folders keep their
                     # pending marker and are picked up at the next app start.
                     log.info("Resume cancelled - remaining folders left for next start")
                     break
+                self.pending_count = len(folders) - i
                 self.state.set(RecorderState.TRANSCRIBING)
                 try:
                     transcribe_folder(folder, self.client, self.cfg, self.state,
@@ -201,6 +211,7 @@ class TrayApp:
                     # Marker stays; this folder is retried at next start.
                     log.exception("Resume of %s crashed", folder)
         finally:
+            self.pending_count = 0
             self.state.set(RecorderState.IDLE)
 
     def _is_idle(self, item):
@@ -210,7 +221,10 @@ class TrayApp:
         return self.state.status == RecorderState.RECORDING
 
     def _is_transcribing(self, item):
-        return self.state.status == RecorderState.TRANSCRIBING
+        # WAITING counts too: Cancel Transcription must stay available while
+        # the app waits for connectivity.
+        return self.state.status in (RecorderState.TRANSCRIBING,
+                                     RecorderState.WAITING)
 
     def _build_menu(self):
         return pystray.Menu(
@@ -297,6 +311,7 @@ class TrayApp:
             )
             # Enter TRANSCRIBING before the thread spawns so a Start Recording
             # click can never slip in between.
+            self.pending_count = len(pending)
             self.state.set(RecorderState.TRANSCRIBING)
             self.stop_recording = threading.Event()
             self.resume_thread = threading.Thread(
