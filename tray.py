@@ -128,7 +128,8 @@ class TrayApp:
             target=record_meeting,
             args=(self.p, self.client, self.cfg, self.state,
                   self.stop_recording, self._on_transcript),
-            kwargs={"audio_levels": self.audio_levels},
+            kwargs={"audio_levels": self.audio_levels,
+                    "on_error": self._on_transcription_failed},
             daemon=True,
         )
         self.recording_thread.start()
@@ -149,6 +150,13 @@ class TrayApp:
 
     def _on_transcript(self, path: str):
         notify("Meeting recorded", f"Transcript saved:\n{Path(path).name}")
+
+    def _on_transcription_failed(self, folder: str):
+        notify(
+            "Transcription failed — audio saved",
+            f"Your recording is kept in {Path(folder).name}.\n"
+            "Run retranscribe.py when back online.",
+        )
 
     def _is_idle(self, item):
         return self.state.status == RecorderState.IDLE

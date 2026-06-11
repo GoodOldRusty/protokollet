@@ -317,10 +317,11 @@ def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict,
             texts.append(text)
             if chunk_path != wav_path:
                 chunk_path.unlink(missing_ok=True)
-    except TranscriptionCancelled:
-        # Cancel can fire mid-chunk, so remove every chunk file (the in-flight
-        # one and any not yet processed). Already-done chunks were deleted above;
-        # missing_ok makes the re-delete harmless. The original wav_path is kept.
+    except Exception:
+        # Cancel or failure (e.g. network down) can fire mid-chunk, so remove
+        # every chunk file (the in-flight one and any not yet processed).
+        # Already-done chunks were deleted above; missing_ok makes the
+        # re-delete harmless. The original wav_path is kept.
         for chunk_path in chunks:
             if chunk_path != wav_path:
                 chunk_path.unlink(missing_ok=True)
@@ -433,21 +434,21 @@ class RecorderState:
 def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
                    state: RecorderState,
                    stop_recording: threading.Event,
-                   on_transcript=None, audio_levels=None):
+                   on_transcript=None, audio_levels=None, on_error=None):
     """
     Record until stop_recording is set. Transcribe and save.
     Runs in a background thread.
     """
     try:
         _record_meeting_inner(p, client, cfg, state, stop_recording,
-                              on_transcript, audio_levels)
+                              on_transcript, audio_levels, on_error)
     except Exception:
         log.exception("record_meeting crashed")
         state.set(RecorderState.IDLE)
 
 
 def _record_meeting_inner(p, client, cfg, state, stop_recording,
-                          on_transcript, audio_levels):
+                          on_transcript, audio_levels, on_error):
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     folder = cfg["output_dir"] / ts
     folder.mkdir(parents=True, exist_ok=True)
@@ -588,3 +589,12 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
         log.info("Transcription cancelled. Audio kept in: %s", folder)
         log.info("To finish it later, run: python retranscribe.py \"%s\"", folder)
         state.set(RecorderState.IDLE)
+    except Exception:
+        # API/network failures (e.g. offline) land here. The audio is already
+        # on disk and is deliberately kept — deletion only happens on the
+        # success path above — so the meeting can be recovered later.
+        log.exception("Transcription failed. Audio kept in: %s", folder)
+        log.info("To finish it later, run: python retranscribe.py \"%s\"", folder)
+        state.set(RecorderState.IDLE)
+        if on_error:
+            on_error(str(folder))

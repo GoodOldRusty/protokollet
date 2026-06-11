@@ -4,7 +4,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.4.1
+**Version:** 1.4.2
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -246,7 +246,7 @@ integritet högst upp.
   (ca 0,09 EUR för ett 30-minutersmöte). LLM-sammanfattningen kostar
   bråkdelar av ett öre per möte.
 - Inspelningar kortare än `min_seconds` slängs automatiskt.
-- Om transkriberingen avbryts behålls råljudet (`mic.wav`,
+- Om transkriberingen avbryts eller misslyckas behålls råljudet (`mic.wav`,
   `loopback.wav`) i inspelningsmappen — även när `keep_audio` är false —
   så att du kan slutföra senare med
   `python retranscribe.py "<inspelningsmapp>"`.
@@ -256,6 +256,14 @@ integritet högst upp.
 ---
 
 ## Ändringslogg
+
+### v1.4.2 (2026-06-11)
+- Fix: en misslyckad transkribering (till exempel utan internet) visar nu
+  en avisering om att ljudet är sparat och hur det räddas med
+  `retranscribe.py` — tidigare gick programmet tyst tillbaka till viloläge
+  utan besked
+- Fix: kvarlämnade WAV-bitar städas nu bort även när transkriberingen
+  misslyckas halvvägs (tidigare bara vid avbrytning)
 
 ### v1.4.1 (2026-06-04)
 - Fix: när en lång inspelning sparades kunde det ta flera minuter medan
