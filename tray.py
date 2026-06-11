@@ -171,24 +171,24 @@ class TrayApp:
             self.icon.stop()
 
     def _on_transcript(self, path: str):
-        notify("Meeting recorded", f"Transcript saved:\n{Path(path).name}")
+        notify("Meeting recorded", f"Meeting notes saved:\n{Path(path).name}")
 
     def _on_transcription_failed(self, folder: str):
         notify(
-            "Transcription failed — audio saved",
-            f"Your recording is kept in {Path(folder).name}.\n"
-            "It will be retried next time the app starts.",
+            "Could not finish the meeting notes",
+            f"Nothing is lost — kept in {Path(folder).name}.\n"
+            "The app finishes the job next time it starts.",
         )
 
     def _on_offline(self, folder: str):
         notify(
             "You're offline — recording saved",
-            "Transcription starts automatically\n"
-            "when you're back online.",
+            "Your meeting notes will be finished\n"
+            "automatically when you're back online.",
         )
 
     def _on_online(self):
-        notify("Back online", "Transcribing your meeting now...")
+        notify("Back online", "Finishing your meeting notes now...")
 
     def _resume_pending(self, folders):
         try:

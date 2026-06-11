@@ -3,7 +3,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.6.1
+**Version:** 1.7.0
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -106,11 +106,16 @@ under inspelning, (3) en färdig `.md`-fil öppnad i en editor.
    namn (konfigurerbart), loopback märks "Others".
 5. **LLM-sammanfattning** — Råtranskriptet bearbetas av Mistral till
    strukturerade mötesanteckningar.
-6. **Resultat** — En beskrivande namngiven markdown-fil (t.ex.
-   `2026-04-01_14-31_budgetplanering-q3.md`) med:
+6. **Resultat** — två filer i inspelningsmappen:
+   - `transkript.md` — den råa transkriberingen med talaretiketter,
+     sparad så fort transkriberingen är klar (före sammanfattningssteget,
+     så den kan aldrig gå förlorad)
+   - protokollet, namngivet efter mötet (t.ex.
+     `2026-04-01_14-31_budgetplanering-q3.md`) — det är filen du delar,
+     utan att hela ordagranna samtalet följer med:
 
    ```markdown
-   # Mötesprotokoll 2026-03-26 14:30
+   # budgetplanering q3 — 2026-04-01 14:31
 
    ## Sammanfattning
    Kort sammanfattning av mötet...
@@ -126,9 +131,7 @@ under inspelning, (3) en färdig `.md`-fil öppnad i en editor.
 
    ---
 
-   ## Rå transkribering
-   Jan: ursprunglig transkriberad text...
-   Others: ursprunglig transkriberad text...
+   *Rå transkribering: [transkript.md](transkript.md)*
    ```
 
 ### Systemfältet
@@ -273,11 +276,12 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
   väntar. Under väntan kollas anslutningen var 15:e sekund och
   transkriberingen återupptas automatiskt. Nya inspelningar kan inte
   startas förrän väntan är klar eller avbruten.
-- **Väntemarkör** — en `.pending`-fil i inspelningsmappen markerar att en
-  transkribering återstår. Den tas bort vid lyckat resultat eller
-  avbrytning och behålls vid fel eller avstängning, så att programmet
-  återupptar ofärdiga transkriberingar vid nästa start. `retranscribe.py`
-  rensar den också.
+- **Väntemarkör** — en `.pending`-fil i inspelningsmappen markerar att
+  arbete återstår (transkribering och/eller sammanfattning). Den tas bort
+  när protokollet sparats eller vid avbrytning, och behålls vid fel eller
+  avstängning — nästa programstart gör om exakt det steg som saknas:
+  finns `transkript.md` redan görs bara sammanfattningen om (inget ljud
+  behövs, inget betalas igen). `retranscribe.py` rensar den också.
 - **Transkribering i bitar** — ljudfiler delas i 2-minutersbitar,
   konverteras till mp3 och skickas en i taget med automatiska
   omförsök. Det undviker API-timeouts vid långa inspelningar.
@@ -299,6 +303,18 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 ---
 
 ## Ändringslogg
+
+### v1.7.0 (2026-06-11)
+- Nytt: varje möte ger nu två filer — `transkript.md` (den råa
+  transkriberingen med talaretiketter, sparad före sammanfattningssteget)
+  och protokollet, som länkar till transkriptet i stället för att bädda
+  in det. Dela protokollet utan att hela ordagranna samtalet följer med
+- Fix: en misslyckad sammanfattning skriver inte längre en notis som
+  felaktigt påstod att `retranscribe.py` kunde försöka igen (ljudet var
+  redan raderat) — transkriptet sparas först, mappen förblir markerad,
+  och nästa programstart gör bara om sammanfattningssteget
+- Fix: två inspelningar startade inom samma minut delar inte längre mapp
+  (sekunder läggs till i mappnamnet vid kollision)
 
 ### v1.6.1 (2026-06-11)
 - Fix: **Cancel Transcription** kunde verka hänga i upp till 10 minuter

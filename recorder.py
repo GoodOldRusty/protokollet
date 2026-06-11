@@ -194,10 +194,16 @@ MAX_RETRIES = 5
 RETRY_BASE_DELAY = 10  # seconds
 OFFLINE_POLL_SECONDS = 15  # how often to re-check connectivity while waiting
 
-# Marker file for a recording that is owed a transcription. Created when
-# transcription is about to start, removed on success or deliberate cancel,
-# kept on failure/shutdown so the next app start can resume the work.
+# Marker file for a recording that is owed work (transcription and/or
+# summary). Created when processing is about to start, removed when the
+# protokoll is saved or on deliberate cancel, kept on failure/shutdown so
+# the next app start can resume exactly the step that is missing.
 PENDING_MARKER = ".pending"
+
+# The raw transcript is written to this fixed name inside the recording
+# folder, BEFORE the LLM summary runs — it is the durable artifact. The
+# protokoll gets the title-based filename and links to this file.
+TRANSCRIPT_FILENAME = "transkript.md"
 
 
 def is_api_reachable(cfg: dict, timeout: float = 5.0) -> bool:
@@ -428,13 +434,14 @@ def title_to_filename(title: str, ts: str) -> str:
     slug = slug[:60]  # cap length
     if slug:
         return f"{ts}_{slug}.md"
-    return f"{ts}_transcript.md"
+    return f"{ts}_protokoll.md"
 
 
 def find_pending(cfg: dict) -> list[Path]:
-    """Recording folders whose transcription never finished: pending marker
-    present, audio still on disk, and no transcript yet. Stale markers
-    (audio gone, or a transcript already saved) are removed."""
+    """Recording folders whose processing never finished: pending marker
+    present, no protokoll yet, and either audio (transcription owed) or a
+    raw transcript (only the summary owed). Stale markers — a protokoll
+    already saved, or nothing left to work from — are removed."""
     out_dir = Path(cfg["output_dir"])
     pending = []
     if not out_dir.exists():
@@ -442,13 +449,15 @@ def find_pending(cfg: dict) -> list[Path]:
     for marker in sorted(out_dir.glob(f"*/{PENDING_MARKER}")):
         folder = marker.parent
         has_audio = (folder / "mic.wav").exists() or (folder / "loopback.wav").exists()
-        has_transcript = any(folder.glob("*.md"))
-        if has_audio and not has_transcript:
-            pending.append(folder)
-        else:
-            # Stale marker: audio is gone, or a transcript already exists
-            # (e.g. the marker unlink failed right after a successful save).
+        has_transcript = (folder / TRANSCRIPT_FILENAME).exists()
+        has_protokoll = any(p for p in folder.glob("*.md")
+                            if p.name != TRANSCRIPT_FILENAME)
+        if has_protokoll or not (has_audio or has_transcript):
+            # Done (e.g. the marker unlink failed right after a successful
+            # save), or there is nothing left to work from.
             marker.unlink(missing_ok=True)
+        else:
+            pending.append(folder)
     return pending
 
 
@@ -481,14 +490,16 @@ def transcribe_folder(folder: Path, client: OpenAI, cfg: dict,
                       state: RecorderState, stop_recording: threading.Event,
                       on_transcript=None, on_error=None,
                       on_offline=None, on_online=None):
-    """Transcribe a recording folder (mic.wav/loopback.wav) into a meeting
-    transcript. Shared by the live recording flow and the startup resume of
-    pending recordings. Waits for connectivity if offline, supports cancel,
-    and maintains the pending marker: removed on success or cancel, kept on
-    failure so the next app start retries automatically."""
+    """Process a recording folder into transkript.md (raw transcript, written
+    before the LLM step) plus a protokoll file. Skips transcription when the
+    transcript is already on disk (summary-only retry). Shared by the live
+    recording flow and the startup resume. Waits for connectivity if offline,
+    supports cancel, and maintains the pending marker: removed when the
+    protokoll is saved or on cancel, kept on failure so the next app start
+    resumes exactly the step that is missing."""
     mic_wav = folder / "mic.wav"
     lb_wav = folder / "loopback.wav"
-    md_path = folder / "transcript.md"
+    transcript_path = folder / TRANSCRIPT_FILENAME
     ts = folder.name  # folder is named with the recording timestamp
 
     try:
@@ -507,60 +518,64 @@ def transcribe_folder(folder: Path, client: OpenAI, cfg: dict,
                     time.sleep(1)
                 if is_api_reachable(cfg):
                     break
-            log.info("Back online - starting transcription")
+            log.info("Back online - resuming")
             state.set(RecorderState.TRANSCRIBING)
             if on_online:
                 on_online()
 
-        mic_text = ""
-        lb_text = ""
-
-        if mic_wav.exists() and mic_wav.stat().st_size > 44:  # > bare WAV header = has frames
-            mic_text = transcribe_stream(mic_wav, client, cfg,
-                                         cancel_event=stop_recording)
+        if transcript_path.exists():
+            # The transcription already succeeded in an earlier attempt -
+            # only the summary is owed. No audio needed.
+            raw_transcript = transcript_path.read_text(encoding="utf-8").strip()
+            log.info("Raw transcript already on disk - only summarizing")
         else:
-            log.info("Mic stream empty - skipping transcription")
+            mic_text = ""
+            lb_text = ""
 
-        if stop_recording.is_set():
-            raise TranscriptionCancelled()
+            if mic_wav.exists() and mic_wav.stat().st_size > 44:  # > bare WAV header = has frames
+                mic_text = transcribe_stream(mic_wav, client, cfg,
+                                             cancel_event=stop_recording)
+            else:
+                log.info("Mic stream empty - skipping transcription")
 
-        if lb_wav.exists() and lb_wav.stat().st_size > 44:
-            lb_text = transcribe_stream(lb_wav, client, cfg,
-                                        cancel_event=stop_recording)
-        else:
-            log.info("Loopback stream empty - skipping transcription")
+            if stop_recording.is_set():
+                raise TranscriptionCancelled()
 
-        if stop_recording.is_set():
-            raise TranscriptionCancelled()
+            if lb_wav.exists() and lb_wav.stat().st_size > 44:
+                lb_text = transcribe_stream(lb_wav, client, cfg,
+                                            cancel_event=stop_recording)
+            else:
+                log.info("Loopback stream empty - skipping transcription")
 
-        my_name = cfg.get("my_name", "Me")
-        raw_transcript = format_raw_transcript(mic_text, lb_text, my_name)
+            if stop_recording.is_set():
+                raise TranscriptionCancelled()
+
+            my_name = cfg.get("my_name", "Me")
+            raw_transcript = format_raw_transcript(mic_text, lb_text, my_name)
+
+            # Written BEFORE the LLM step: the transcript is the durable
+            # artifact, so an LLM failure can never lose the meeting.
+            transcript_path.write_text(raw_transcript + "\n", encoding="utf-8")
+            log.info("Raw transcript saved: %s", transcript_path)
 
         log.info("Summarizing with LLM...")
         ts_label = datetime.now().strftime("%Y-%m-%d %H:%M")
-        title = ""
-        try:
-            raw_summary = summarize_transcript(raw_transcript, cfg)
-            title, summary = parse_title_from_summary(raw_summary)
-        except Exception:
-            log.exception("LLM summarization failed - saving raw transcript only")
-            summary = "*Sammanfattning kunde inte genereras (LLM-fel). Kör retranscribe.py för att försöka igen.*"
+        raw_summary = summarize_transcript(raw_transcript, cfg)
+        title, summary = parse_title_from_summary(raw_summary)
 
-        if title:
-            md_path = folder / title_to_filename(title, ts)
-            heading = f"# {title} — {ts_label}"
-        else:
-            heading = f"# Mötesprotokoll {ts_label}"
+        md_path = folder / title_to_filename(title, ts)
+        heading = f"# {title} — {ts_label}" if title else f"# Mötesprotokoll {ts_label}"
 
-        md_content = f"{heading}\n\n{summary}\n\n---\n\n## Rå transkribering\n\n{raw_transcript}\n"
+        md_content = (f"{heading}\n\n{summary}\n\n---\n\n"
+                      f"*Rå transkribering: [{TRANSCRIPT_FILENAME}]({TRANSCRIPT_FILENAME})*\n")
         md_path.write_text(md_content, encoding="utf-8")
-        log.info("Transcript saved: %s", md_path)
+        log.info("Protokoll saved: %s", md_path)
 
         try:
             (folder / PENDING_MARKER).unlink(missing_ok=True)
         except OSError:
             # A locked marker is harmless: find_pending treats folders that
-            # already have a transcript as done and cleans the marker then.
+            # already have a protokoll as done and cleans the marker then.
             log.warning("Could not remove pending marker in %s", folder)
 
         if not cfg["keep_audio"]:
@@ -585,11 +600,11 @@ def transcribe_folder(folder: Path, client: OpenAI, cfg: dict,
         log.info("To finish it later, run: python retranscribe.py \"%s\"", folder)
         state.set(RecorderState.IDLE)
     except Exception:
-        # API/network failures land here. The audio is already on disk and
-        # the pending marker is kept, so the next app start retries this
-        # folder automatically.
-        log.exception("Transcription failed. Audio kept in: %s", folder)
-        log.info("To finish it later, run: python retranscribe.py \"%s\"", folder)
+        # API/network failures land here - including an LLM failure after
+        # the transcript was already written. Whatever exists on disk
+        # (audio and/or transkript.md) plus the kept pending marker lets
+        # the next app start resume exactly the step that is missing.
+        log.exception("Processing failed. Recording kept in: %s", folder)
         state.set(RecorderState.IDLE)
         if on_error:
             on_error(str(folder))
@@ -618,6 +633,12 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
                           on_offline, on_online):
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     folder = cfg["output_dir"] / ts
+    if folder.exists():
+        # Second recording within the same minute: a reused folder would make
+        # transcribe_folder see the first meeting's transkript.md and silently
+        # drop this one's audio. Fall back to seconds resolution.
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        folder = cfg["output_dir"] / ts
     folder.mkdir(parents=True, exist_ok=True)
     mic_wav = folder / "mic.wav"
     lb_wav = folder / "loopback.wav"

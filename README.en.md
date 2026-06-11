@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.6.1
+**Version:** 1.7.0
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -103,11 +103,16 @@ recording, (3) an example output `.md` file opened in an editor.
    your name (configurable), loopback is labeled "Others".
 5. **LLM Summary** — The raw transcript is processed by Mistral to
    produce structured meeting notes.
-6. **Output** — A descriptively named markdown file (e.g.
-   `2026-04-01_14-31_budgetplanering-q3.md`) with:
+6. **Output** — two files in the recording folder:
+   - `transkript.md` — the raw speaker-labeled transcript, saved as soon
+     as transcription finishes (before the summary step, so it can never
+     be lost)
+   - the protokoll, named after the meeting (e.g.
+     `2026-04-01_14-31_budgetplanering-q3.md`) — this is the file you
+     share, without the verbatim conversation tagging along:
 
    ```markdown
-   # Mötesprotokoll 2026-03-26 14:30
+   # budgetplanering q3 — 2026-04-01 14:31
 
    ## Sammanfattning
    Brief meeting summary...
@@ -123,9 +128,7 @@ recording, (3) an example output `.md` file opened in an editor.
 
    ---
 
-   ## Rå transkribering
-   Jan: original transcribed text...
-   Others: original transcribed text...
+   *Rå transkribering: [transkript.md](transkript.md)*
    ```
 
 ### System Tray
@@ -267,10 +270,12 @@ kept so you can run `retranscribe.py` manually.
   While waiting, connectivity is re-checked every 15 seconds and
   transcription resumes automatically. New recordings can't start until
   the wait finishes or is cancelled.
-- **Pending marker** — a `.pending` file in the recording folder marks a
-  transcription that is owed. It is removed on success or cancel and kept
-  on failure or shutdown, so the app resumes unfinished transcriptions at
-  the next start. `retranscribe.py` clears it too.
+- **Pending marker** — a `.pending` file in the recording folder marks
+  work that is owed (transcription and/or summary). It is removed when the
+  protokoll is saved or on cancel, and kept on failure or shutdown — the
+  next app start resumes exactly the missing step: if `transkript.md`
+  already exists, only the summary is redone (no audio needed, nothing
+  re-paid). `retranscribe.py` clears it too.
 - **Chunked transcription** — audio files are split into 2-minute
   chunks, converted to mp3, and sent individually with automatic retry.
   This avoids API timeouts on long recordings.
@@ -292,6 +297,18 @@ kept so you can run `retranscribe.py` manually.
 ---
 
 ## Changelog
+
+### v1.7.0 (2026-06-11)
+- New: each meeting now produces two files — `transkript.md` (the raw
+  speaker-labeled transcript, saved before the summary step) and the
+  protokoll, which links to the transcript instead of embedding it. Share
+  the protokoll without the verbatim conversation tagging along
+- Fix: a failed summary no longer writes a note wrongly claiming
+  `retranscribe.py` could retry (the audio was already deleted by then) —
+  the transcript is saved first, the folder stays marked as pending, and
+  the next app start redoes just the summary step
+- Fix: two recordings started within the same minute no longer share a
+  folder (seconds are added to the folder name on collision)
 
 ### v1.6.1 (2026-06-11)
 - Fix: **Cancel Transcription** could appear stuck for up to 10 minutes

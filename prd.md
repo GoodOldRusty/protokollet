@@ -88,11 +88,15 @@ each recording — no restart needed.
 ### FB4 — LLM summary post-processing
 
 - Mistral via berget.ai (OpenAI-compatible), temperature 0.3, 120 s timeout
-- Structured Swedish markdown: Sammanfattning, Beslut, Åtgärdspunkter,
-  Mötesanteckningar; raw transcript appended under Rå transkribering
-- LLM generates a meeting title that becomes the filename
-  (`<timestamp>_<slug>.md`); on LLM failure the raw transcript is saved
-  with an explanatory note instead of being lost
+- Two files per meeting: `transkript.md` (raw speaker-labeled transcript,
+  written BEFORE the LLM step — the durable artifact) and the protokoll
+  (Sammanfattning, Beslut, Åtgärdspunkter, Mötesanteckningar) which links
+  to the transcript instead of embedding it — shareable without the
+  verbatim conversation
+- LLM generates a meeting title that becomes the protokoll filename
+  (`<timestamp>_<slug>.md`, fallback `<timestamp>_protokoll.md`); on LLM
+  failure the transcript is already safe on disk and the pending marker
+  stays, so the next app start redoes only the summary step
 
 ### FB5 — System tray application
 
@@ -114,19 +118,23 @@ Draggable. Replaces the earlier title-barred "Audio Levels" window.
 
 ### FB7 — Offline resilience and recovery
 
-The invariant: **a stopped recording ≥ `min_seconds` is either
-transcribed or sits on disk with audio + `.pending` marker.**
+The invariant: **a stopped recording ≥ `min_seconds` is either fully
+processed (transkript.md + protokoll) or sits on disk with the `.pending`
+marker plus whatever already exists (audio and/or transcript) — and the
+next start redoes only the missing step.**
 
 - At Stop, a TCP reachability check against the API host decides:
-  transcribe now, or enter the orange waiting state and poll every 15 s,
+  process now, or enter the orange waiting state and poll every 15 s,
   resuming automatically when connectivity returns
-- The `.pending` marker is created when transcription is owed, removed on
-  success **or deliberate cancel** (cancel means "never auto-transcribe
-  this"), kept on failure/crash/shutdown
-- At startup, folders with a marker, audio, and no transcript are resumed
-  automatically (toast announces it); folders that already contain a
-  transcript are treated as done and their stale marker is cleaned
-- `retranscribe.py` recovers any kept folder manually and clears the marker
+- The `.pending` marker is created when work is owed, removed when the
+  protokoll is saved **or on deliberate cancel** (cancel means "never
+  auto-process this"), kept on failure/crash/shutdown
+- At startup, marked folders are resumed automatically (toast announces
+  it): with a transcript on disk only the summary is redone (no audio
+  needed); folders that already have a protokoll are treated as done and
+  their stale marker is cleaned
+- `retranscribe.py` recovers any kept folder manually (same
+  skip-what-is-done logic) and clears the marker
 
 ### FB8 — Setup and distribution
 
