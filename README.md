@@ -4,7 +4,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.6.0
+**Version:** 1.6.1
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -280,6 +280,12 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 ---
 
 ## Ändringslogg
+
+### v1.6.1 (2026-06-11)
+- Fix: **Cancel Transcription** kunde verka hänga i upp till 10 minuter
+  när transkriberingstjänsten slutade svara mitt i ett anrop. API-anrop
+  får nu en timeout på 60 sekunder och alla omförsök sköts av programmets
+  egen avbrytbara omförsökslogik
 
 ### v1.6.0 (2026-06-11)
 - Nytt: ljudnivåfönstret är nu en inspelningspanel — ramlös och mörk,

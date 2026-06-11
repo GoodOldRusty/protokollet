@@ -281,9 +281,14 @@ class TrayApp:
             )
             return
 
+        # timeout: the SDK default is 600s, during which Cancel Transcription
+        # cannot interrupt an in-flight request. max_retries=0 hands retrying
+        # to our own loop, which checks the cancel flag between attempts.
         self.client = OpenAI(
             api_key=api_key,
             base_url=self.cfg["api_base_url"],
+            timeout=60,
+            max_retries=0,
         )
         self.p = pyaudio.PyAudio()
 

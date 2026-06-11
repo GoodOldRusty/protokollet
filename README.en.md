@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.6.0
+**Version:** 1.6.1
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -273,6 +273,12 @@ kept so you can run `retranscribe.py` manually.
 ---
 
 ## Changelog
+
+### v1.6.1 (2026-06-11)
+- Fix: **Cancel Transcription** could appear stuck for up to 10 minutes
+  when the transcription service stopped answering mid-request. API calls
+  now time out after 60 seconds and retrying is handled entirely by the
+  app's own cancellable retry loop
 
 ### v1.6.0 (2026-06-11)
 - New: the audio-levels window is now a recording pill — frameless and

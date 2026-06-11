@@ -165,7 +165,8 @@ if not api_key:
     log.error("BERGET_API_KEY not set. Add it to .env file.")
     sys.exit(1)
 
-client = OpenAI(api_key=api_key, base_url=cfg["api_base_url"])
+client = OpenAI(api_key=api_key, base_url=cfg["api_base_url"],
+                timeout=60, max_retries=0)
 
 mic_text = ""
 lb_text = ""

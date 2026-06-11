@@ -391,7 +391,9 @@ Skriv allt på svenska. Börja svaret med TITLE-raden."""
 def get_llm_client(cfg: dict) -> OpenAI:
     """Get a separate OpenAI client for LLM, using BERGET_API_KEY2 if available."""
     api_key = os.environ.get("BERGET_API_KEY2") or os.environ.get("BERGET_API_KEY", "")
-    return OpenAI(api_key=api_key, base_url=cfg["api_base_url"])
+    # 120s: long transcripts take a while to summarize, but the SDK's 600s
+    # default would leave the app hanging far too long on a dead endpoint.
+    return OpenAI(api_key=api_key, base_url=cfg["api_base_url"], timeout=120)
 
 
 def summarize_transcript(raw_transcript: str, cfg: dict) -> str:
