@@ -178,6 +178,7 @@ transcribed or sits on disk with audio + `.pending` marker.**
 ## Dependencies
 
 - `pyaudiowpatch` — WASAPI loopback recording
+- `pycaw` — Windows audio session enumeration
 - `numpy` / `scipy` — audio processing and resampling
 - `openai` — berget.ai API client (OpenAI-compatible)
 - `imageio-ffmpeg` — bundled ffmpeg binary for mp3 conversion
