@@ -397,9 +397,13 @@ Skriv allt på svenska. Börja svaret med TITLE-raden."""
 def get_llm_client(cfg: dict) -> OpenAI:
     """Get a separate OpenAI client for LLM, using BERGET_API_KEY2 if available."""
     api_key = os.environ.get("BERGET_API_KEY2") or os.environ.get("BERGET_API_KEY", "")
-    # 120s: long transcripts take a while to summarize, but the SDK's 600s
-    # default would leave the app hanging far too long on a dead endpoint.
-    return OpenAI(api_key=api_key, base_url=cfg["api_base_url"], timeout=120)
+    # Summarizing a long meeting genuinely takes minutes (a ~43k-char
+    # transcript measured ~170s), so 120s timed out every time. 300s gives
+    # real headroom; max_retries=1 keeps a single retry for a transient blip
+    # without stacking three full timeouts into a multi-minute hang. A true
+    # failure keeps the .pending marker, so the next start resumes the summary.
+    return OpenAI(api_key=api_key, base_url=cfg["api_base_url"],
+                  timeout=300, max_retries=1)
 
 
 def summarize_transcript(raw_transcript: str, cfg: dict) -> str:

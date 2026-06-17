@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.7.0
+**Version:** 1.7.1
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -302,6 +302,13 @@ kept so you can run `retranscribe.py` manually.
 ---
 
 ## Changelog
+
+### v1.7.1 (2026-06-17)
+- Fix: summarizing long meetings timed out. The LLM call had a 120s limit
+  while a ~43k-character transcript takes ~170s to summarize, so the app
+  hung for several minutes (three attempts) and then failed. The timeout is
+  now 300s with a single retry; the transcript is kept and the next start
+  redoes the summary if it still fails
 
 ### v1.7.0 (2026-06-11)
 - New: each meeting now produces two files — `transkript.md` (the raw

@@ -3,7 +3,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.7.0
+**Version:** 1.7.1
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -308,6 +308,14 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 ---
 
 ## Ändringslogg
+
+### v1.7.1 (2026-06-17)
+- Fix: sammanfattningen av långa möten timade ut. LLM-anropet hade en
+  120-sekunders gräns medan ett ~43 000 tecken långt transkript tar ~170s
+  att sammanfatta — appen hängde i flera minuter (tre försök) och
+  misslyckades sedan. Tidsgränsen är nu 300s med ett enda omförsök;
+  transkriptet finns kvar och nästa start gör om sammanfattningen om den
+  ändå skulle misslyckas
 
 ### v1.7.0 (2026-06-11)
 - Nytt: varje möte ger nu två filer — `transkript.md` (den råa
