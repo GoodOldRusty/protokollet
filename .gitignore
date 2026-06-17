@@ -11,3 +11,11 @@ venv/
 *.pem
 *.secret
 *.log
+
+# Defense-in-depth: never commit recorded audio or meeting output, even if a
+# user repoints output_dir inside the repo (default ~/Recordings is outside).
+*.wav
+*.mp3
+/Recordings/
+transkript.md
+*_protokoll.md

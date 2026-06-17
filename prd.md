@@ -1,6 +1,6 @@
 # protokollet — PRD
 
-Current as of v1.6.1 (2026-06-11). Formerly "Meeting Recorder"; renamed
+Current as of v1.7.0 (2026-06-11). Formerly "Meeting Recorder"; renamed
 for public release. Feature history lives in the README changelog.
 
 ## Overview
