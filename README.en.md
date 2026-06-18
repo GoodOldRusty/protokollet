@@ -288,8 +288,10 @@ kept so you can run `retranscribe.py` manually.
   corners via a transparent color key) with a pulsing REC dot, elapsed
   timer, and live level bars for mic and loopback; docked to the
   bottom-right corner of the work area, draggable.
-- **API cost** — transcription is ~0.00005 EUR/second (~0.09 EUR for
-  a 30 min meeting). LLM summary costs fractions of a cent per meeting.
+- **API cost** — transcription is ~0.00005 EUR/second (~0.09–0.18 EUR for
+  a 30-minute meeting depending on billing; both the mic and the
+  system-audio stream are transcribed separately). LLM summary costs
+  fractions of a cent per meeting.
 - Recordings under `min_seconds` are automatically discarded.
 - If transcription is cancelled or fails, the raw audio (`mic.wav`,
   `loopback.wav`) is kept in the recording folder — even when `keep_audio`

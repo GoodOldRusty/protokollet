@@ -295,8 +295,9 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
   tidräknare och nivåstaplar i realtid för mikrofon och loopback; dockat
   i arbetsytans nedre högra hörn, flyttbart.
 - **API-kostnad** — transkribering kostar ca 0,00005 EUR/sekund
-  (ca 0,09 EUR för ett 30-minutersmöte). LLM-sammanfattningen kostar
-  bråkdelar av ett öre per möte.
+  (ca 0,09–0,18 EUR för ett 30-minutersmöte beroende på debiteringsmodell;
+  både mikrofon- och systemljudsspåret transkriberas var för sig).
+  LLM-sammanfattningen kostar bråkdelar av ett öre per möte.
 - Inspelningar kortare än `min_seconds` slängs automatiskt.
 - Om transkriberingen avbryts eller misslyckas behålls råljudet (`mic.wav`,
   `loopback.wav`) i inspelningsmappen — även när `keep_audio` är false —
