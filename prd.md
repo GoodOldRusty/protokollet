@@ -1,6 +1,6 @@
 # protokollet — PRD
 
-Current as of v1.7.0 (2026-06-11). Formerly "Meeting Recorder"; renamed
+Current as of v1.7.1 (2026-06-17). Formerly "Meeting Recorder"; renamed
 for public release. Feature history lives in the README changelog.
 
 ## Overview
@@ -87,7 +87,7 @@ each recording — no restart needed.
 
 ### FB4 — LLM summary post-processing
 
-- Mistral via berget.ai (OpenAI-compatible), temperature 0.3, 120 s timeout
+- Mistral via berget.ai (OpenAI-compatible), temperature 0.3, 300 s timeout with a single retry
 - Two files per meeting: `transkript.md` (raw speaker-labeled transcript,
   written BEFORE the LLM step — the durable artifact) and the protokoll
   (Sammanfattning, Beslut, Åtgärdspunkter, Mötesanteckningar) which links
