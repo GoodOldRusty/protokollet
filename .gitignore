@@ -19,3 +19,7 @@ venv/
 /Recordings/
 transkript.md
 *_protokoll.md
+# Slug-named protokoll, e.g. 2026-04-01_14-31_budgetplanering-q3.md.
+# *_protokoll.md above only catches the fallback name; this also catches
+# the normal slug names if output_dir is repointed inside the repo.
+????-??-??_*.md
