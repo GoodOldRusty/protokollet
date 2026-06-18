@@ -340,16 +340,28 @@ def transcribe_stream(wav_path: Path, client: OpenAI, cfg: dict,
         for i, chunk_path in enumerate(chunks):
             if cancel_event and cancel_event.is_set():
                 raise TranscriptionCancelled()
-            text = _transcribe_with_retry(chunk_path, i + 1, len(chunks), client, cfg,
-                                          cancel_event=cancel_event)
+            # Per-chunk cache, stream-qualified by stem so mic and loopback
+            # chunk 000 never collide. Lets an interrupted run resume without
+            # re-paying for chunks already transcribed.
+            cache_file = wav_path.parent / f".transcript_{wav_path.stem}_chunk{i:03d}.txt"
+            if cache_file.exists():
+                text = cache_file.read_text(encoding="utf-8")
+                log.info("Chunk %d/%d already transcribed (%d chars), skipping",
+                         i + 1, len(chunks), len(text))
+            else:
+                text = _transcribe_with_retry(chunk_path, i + 1, len(chunks), client, cfg,
+                                              cancel_event=cancel_event)
+                # Write the cache BEFORE deleting the chunk WAV, so a crash
+                # right here never loses a chunk we already paid for.
+                cache_file.write_text(text, encoding="utf-8")
             texts.append(text)
             if chunk_path != wav_path:
                 chunk_path.unlink(missing_ok=True)
     except Exception:
-        # Cancel or failure (e.g. network down) can fire mid-chunk, so remove
-        # every chunk file (the in-flight one and any not yet processed).
-        # Already-done chunks were deleted above; missing_ok makes the
-        # re-delete harmless. The original wav_path is kept.
+        # Cancel or failure (e.g. network down) can fire mid-chunk. Remove the
+        # chunk WAVs (regenerated from the source on resume) but KEEP the .txt
+        # caches so a resumed run skips chunks already done. Caches are cleared
+        # by the caller once transkript.md is durably written.
         for chunk_path in chunks:
             if chunk_path != wav_path:
                 chunk_path.unlink(missing_ok=True)
@@ -561,6 +573,10 @@ def transcribe_folder(folder: Path, client: OpenAI, cfg: dict,
             # artifact, so an LLM failure can never lose the meeting.
             transcript_path.write_text(raw_transcript + "\n", encoding="utf-8")
             log.info("Raw transcript saved: %s", transcript_path)
+            # The transcript is durable now, so the per-chunk caches (both
+            # streams) are spent - clear them regardless of keep_audio.
+            for cache_file in folder.glob(".transcript_*chunk*.txt"):
+                cache_file.unlink(missing_ok=True)
 
         log.info("Summarizing with LLM...")
         ts_label = datetime.now().strftime("%Y-%m-%d %H:%M")

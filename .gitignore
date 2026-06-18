@@ -23,3 +23,6 @@ transkript.md
 # *_protokoll.md above only catches the fallback name; this also catches
 # the normal slug names if output_dir is repointed inside the repo.
 ????-??-??_*.md
+# Per-chunk transcript caches written during transcription (cleared once
+# transkript.md is saved; may linger after an interrupted/cancelled run).
+.transcript_*chunk*.txt
