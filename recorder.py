@@ -432,8 +432,60 @@ def summarize_transcript(raw_transcript: str, cfg: dict) -> str:
     return response.choices[0].message.content.strip()
 
 
+_FENCE_LANGUAGE = re.compile(r"^[A-Za-z0-9_+-]*$")
+
+
+def strip_code_fence(text: str) -> str:
+    """Unwrap a reply the model put entirely inside a code fence.
+
+    Mistral intermittently returns the whole protokoll wrapped in
+    ```markdown ... ```. The TITLE match is anchored at the start, so that
+    fence costs the meeting its filename and its heading, and leaves the
+    raw TITLE line and the backticks sitting in the document people read.
+
+    Only an outer fence wrapping the entire reply is removed. A fence that
+    starts partway through, or one that closes before the end, is content
+    the meeting actually produced and is left alone.
+    """
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if len(lines) < 2 or lines[-1].strip() != "```":
+        return stripped
+    if not _FENCE_LANGUAGE.match(lines[0][3:].strip()):
+        return stripped
+    return "\n".join(lines[1:-1]).strip()
+
+
+def clear_previous_protokoll(folder: Path, keep: Path | None = None) -> None:
+    """Remove any protokoll already sitting in the folder.
+
+    Rewriting a summary produces a new filename whenever the model picks a
+    different title, so without this the folder accumulates versions and
+    "which one is the protokoll" becomes a question of which name sorts
+    first. A rewrite is meant to replace, not to fork.
+
+    The transcript is never touched. It is the durable artifact, it is not
+    regenerated, and the protokoll links to it by a fixed name.
+    """
+    for existing in folder.glob("*.md"):
+        if existing.name == TRANSCRIPT_FILENAME or existing == keep:
+            continue
+        try:
+            existing.unlink()
+            log.info("Replaced previous protokoll: %s", existing.name)
+        except OSError:
+            log.warning("Could not remove previous protokoll %s", existing.name)
+
+
 def parse_title_from_summary(summary: str) -> tuple[str, str]:
-    """Extract TITLE: line from summary. Returns (title, summary_without_title)."""
+    """Extract TITLE: line from summary. Returns (title, summary_without_title).
+
+    The match stays anchored at the start deliberately: searching anywhere
+    would happily match someone saying "TITLE:" during the meeting.
+    """
+    summary = strip_code_fence(summary)
     match = re.match(r"TITLE:\s*(.+)", summary)
     if not match:
         return "", summary
@@ -588,6 +640,9 @@ def transcribe_folder(folder: Path, client: OpenAI, cfg: dict,
 
         md_content = (f"{heading}\n\n{summary}\n\n---\n\n"
                       f"*Rå transkribering: [{TRANSCRIPT_FILENAME}]({TRANSCRIPT_FILENAME})*\n")
+        # A rewrite replaces. Without this, a regenerated summary under a new
+        # title leaves the old file beside it and the folder has two answers.
+        clear_previous_protokoll(folder, keep=md_path)
         md_path.write_text(md_content, encoding="utf-8")
         log.info("Protokoll saved: %s", md_path)
 
