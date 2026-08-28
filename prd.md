@@ -1,6 +1,6 @@
 # protokollet — PRD
 
-Current as of v1.7.1 (2026-06-17). Formerly "Meeting Recorder"; renamed
+Current as of v1.7.2 (2026-08-28). Formerly "Meeting Recorder"; renamed
 for public release. Feature history lives in the README changelog.
 
 ## Overview
@@ -74,6 +74,11 @@ each recording — no restart needed.
   `loopback.wav` to `output_dir/<YYYY-MM-DD_HH-MM>/`
 - Discards recordings under `min_seconds`; handles empty streams
 - A `.pending` marker is written once transcription is owed (see FB7)
+- A fresh `pyaudio.PyAudio()` session is created for each recording and
+  released when it ends, so devices connected or changed after app start
+  are picked up; the recording folder is only created once both the mic
+  and loopback device resolve, so a failed device lookup leaves no empty
+  dated folder
 
 ### FB3 — Transcription via berget.ai API
 
@@ -108,6 +113,9 @@ Menu: status label, Start/Stop Recording, Cancel Transcription (also
 available in the orange state), Open Recordings, Settings…, Quit.
 Windows toasts narrate every outcome: saved, failed (audio kept),
 offline (will auto-resume), back online, resuming unfinished recordings.
+Start Recording is ignored while a session is already initializing (a
+brief per-session device setup precedes the icon turning red), so a
+second click cannot spawn a second session.
 
 ### FB6 — Recording pill
 
@@ -178,6 +186,14 @@ next start redoes only the missing step.**
   The pill owns the tk mainloop on the main thread; cross-thread
   communication is via plain flags polled by the tk thread. The startup
   resume runs in its own thread, gated by the same state machine.
+- **Audio session lifetime:** Each recording opens its own
+  `pyaudio.PyAudio()` instance rather than reusing one held for the
+  process lifetime, because PortAudio only enumerates devices present at
+  instance creation — a long-lived instance never sees a USB interface
+  plugged in, or a default-device change, after app start. The instance
+  is released in a `finally` block on every exit path (normal stop,
+  discard-under-`min_seconds`, or an exception), and capture-thread
+  exceptions are logged rather than dying silently under `pythonw`.
 - **No timestamps in transcript:** the two-stream approach doesn't allow
   reliable chronological interleaving without diarization.
 - **Identity:** repo-local git identity (goodoldrusty); commits carry no

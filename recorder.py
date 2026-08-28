@@ -120,26 +120,42 @@ def record_device(
 ):
     """Record from device into frames[] until stop_event is set.
     Stores channel count as first element for downmix."""
-    rate = int(device_info["defaultSampleRate"])
-    channels = max(1, int(device_info["maxInputChannels"]))
-    stream = p.open(
-        format=FORMAT,
-        channels=channels,
-        rate=rate,
-        input=True,
-        input_device_index=int(device_info["index"]),
-        frames_per_buffer=CHUNK,
-    )
-    frames.append(channels)
-    while not stop_event.is_set():
-        data = stream.read(CHUNK, exception_on_overflow=False)
-        frames.append(data)
+    stream = None
+    try:
+        rate = int(device_info["defaultSampleRate"])
+        channels = max(1, int(device_info["maxInputChannels"]))
+        stream = p.open(
+            format=FORMAT,
+            channels=channels,
+            rate=rate,
+            input=True,
+            input_device_index=int(device_info["index"]),
+            frames_per_buffer=CHUNK,
+        )
+        frames.append(channels)
+        while not stop_event.is_set():
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            frames.append(data)
+            if level_callback is not None:
+                samples = np.frombuffer(data, dtype=np.int16)
+                rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2)) / 32768.0
+                level_callback(min(1.0, rms * 3.0))
+    except Exception:
+        # Daemon thread under pythonw: an unlogged exception here vanishes
+        # and the stream just comes out silently empty.
+        log.exception("Capture failed for %s",
+                      device_info.get("name", "unknown device"))
+    finally:
+        # Zero the VU bar so a dead stream doesn't freeze at its last level.
         if level_callback is not None:
-            samples = np.frombuffer(data, dtype=np.int16)
-            rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2)) / 32768.0
-            level_callback(min(1.0, rms * 3.0))
-    stream.stop_stream()
-    stream.close()
+            level_callback(0.0)
+        if stream is not None:
+            try:
+                stream.stop_stream()
+                stream.close()
+            except Exception:
+                log.exception("Stream close failed for %s",
+                              device_info.get("name", "unknown device"))
 
 
 def frames_to_wav(frames: list, rate: int, out_path: Path) -> float:
@@ -685,7 +701,7 @@ def transcribe_folder(folder: Path, client: OpenAI, cfg: dict,
             on_error(str(folder))
 
 
-def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
+def record_meeting(client: OpenAI, cfg: dict,
                    state: RecorderState,
                    stop_recording: threading.Event,
                    on_transcript=None, audio_levels=None, on_error=None,
@@ -695,7 +711,7 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
     Runs in a background thread.
     """
     try:
-        _record_meeting_inner(p, client, cfg, state, stop_recording,
+        _record_meeting_inner(client, cfg, state, stop_recording,
                               on_transcript, audio_levels, on_error,
                               on_offline, on_online)
     except Exception:
@@ -703,7 +719,7 @@ def record_meeting(p: pyaudio.PyAudio, client: OpenAI, cfg: dict,
         state.set(RecorderState.IDLE)
 
 
-def _record_meeting_inner(p, client, cfg, state, stop_recording,
+def _record_meeting_inner(client, cfg, state, stop_recording,
                           on_transcript, audio_levels, on_error,
                           on_offline, on_online):
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -714,59 +730,78 @@ def _record_meeting_inner(p, client, cfg, state, stop_recording,
         # drop this one's audio. Fall back to seconds resolution.
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         folder = cfg["output_dir"] / ts
-    folder.mkdir(parents=True, exist_ok=True)
     mic_wav = folder / "mic.wav"
     lb_wav = folder / "loopback.wav"
 
-    try:
-        loopback = get_loopback_device(p)
-    except Exception as e:
-        log.error("Could not get loopback device: %s", e)
-        state.set(RecorderState.IDLE)
-        return
-
-    try:
-        mic = get_default_mic(p)
-    except Exception as e:
-        log.error("Could not get microphone: %s", e)
-        state.set(RecorderState.IDLE)
-        return
+    # Fresh instance per session: PortAudio only sees devices present at
+    # init, so a long-lived instance misses hot-plugged interfaces and
+    # default-device changes made after app start (e.g. a USB interface).
+    p = pyaudio.PyAudio()
 
     lb_frames, mic_frames = [], []
     stop = threading.Event()
+    lb_thread = mic_thread = None
+    try:
+        try:
+            loopback = get_loopback_device(p)
+        except Exception as e:
+            log.error("Could not get loopback device: %s", e)
+            state.set(RecorderState.IDLE)
+            return
 
-    lb_level_cb = audio_levels.update_loopback if audio_levels else None
-    mic_level_cb = audio_levels.update_mic if audio_levels else None
+        try:
+            mic = get_default_mic(p)
+        except Exception as e:
+            log.error("Could not get microphone: %s", e)
+            state.set(RecorderState.IDLE)
+            return
 
-    lb_thread = threading.Thread(
-        target=record_device,
-        args=(p, loopback, lb_frames, stop),
-        kwargs={"level_callback": lb_level_cb},
-        daemon=True,
-    )
-    mic_thread = threading.Thread(
-        target=record_device,
-        args=(p, mic, mic_frames, stop),
-        kwargs={"level_callback": mic_level_cb},
-        daemon=True,
-    )
+        # Created only after both devices resolve, so failed attempts don't
+        # litter output_dir with empty folders.
+        folder.mkdir(parents=True, exist_ok=True)
 
-    state.set(RecorderState.RECORDING)
-    log.info("[%s] Recording started", ts)
-    lb_thread.start()
-    mic_thread.start()
+        lb_level_cb = audio_levels.update_loopback if audio_levels else None
+        mic_level_cb = audio_levels.update_mic if audio_levels else None
 
-    stop_recording.wait()
-    stop_recording.clear()  # reset so it can be reused for transcription cancel
+        lb_thread = threading.Thread(
+            target=record_device,
+            args=(p, loopback, lb_frames, stop),
+            kwargs={"level_callback": lb_level_cb},
+            daemon=True,
+        )
+        mic_thread = threading.Thread(
+            target=record_device,
+            args=(p, mic, mic_frames, stop),
+            kwargs={"level_callback": mic_level_cb},
+            daemon=True,
+        )
 
-    # Show "processing" immediately so the user sees their Stop registered.
-    # Saving a long recording can take minutes; without this the icon stays
-    # red and users click Stop again, which used to cancel transcription.
-    state.set(RecorderState.TRANSCRIBING)
+        state.set(RecorderState.RECORDING)
+        log.info("[%s] Recording started", ts)
+        lb_thread.start()
+        mic_thread.start()
 
-    stop.set()
-    lb_thread.join(timeout=5)
-    mic_thread.join(timeout=5)
+        stop_recording.wait()
+        stop_recording.clear()  # reset so it can be reused for transcription cancel
+
+        # Show "processing" immediately so the user sees their Stop registered.
+        # Saving a long recording can take minutes; without this the icon stays
+        # red and users click Stop again, which used to cancel transcription.
+        state.set(RecorderState.TRANSCRIBING)
+    finally:
+        # Runs on every exit, including exceptions unwinding to
+        # record_meeting's handler: stop the capture threads and release the
+        # session so no path can leak an open mic across recordings.
+        stop.set()
+        for t in (lb_thread, mic_thread):
+            if t is not None:
+                t.join(timeout=5)
+        if any(t is not None and t.is_alive() for t in (lb_thread, mic_thread)):
+            # Terminating PortAudio while a capture thread is still blocked
+            # in a read can crash the process; leak the instance instead.
+            log.warning("Capture thread still busy - leaving audio session open")
+        else:
+            p.terminate()
 
     lb_rate = int(loopback["defaultSampleRate"])
     mic_rate = int(mic["defaultSampleRate"])

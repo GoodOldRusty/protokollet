@@ -94,7 +94,6 @@ class TrayApp:
         self.state = RecorderState()
         self.icon = None
         self.client = None
-        self.p = None
         self.stop_recording = None
         self.recording_thread = None
         self.audio_levels = AudioLevels()
@@ -132,6 +131,10 @@ class TrayApp:
     def _start_recording(self):
         if self.state.status != RecorderState.IDLE:
             return
+        # State flips to RECORDING only after per-session device init, so a
+        # second click in that window would spawn a second session.
+        if self.recording_thread and self.recording_thread.is_alive():
+            return
         # The resume batch owns self.stop_recording; replacing it mid-batch
         # would detach its cancel handling. Block new recordings until done.
         if self.resume_thread and self.resume_thread.is_alive():
@@ -140,7 +143,7 @@ class TrayApp:
         self.stop_recording = threading.Event()
         self.recording_thread = threading.Thread(
             target=record_meeting,
-            args=(self.p, self.client, self.cfg, self.state,
+            args=(self.client, self.cfg, self.state,
                   self.stop_recording, self._on_transcript),
             kwargs={"audio_levels": self.audio_levels,
                     "on_error": self._on_transcription_failed,
@@ -268,8 +271,6 @@ class TrayApp:
             ],
         )
 
-        import pyaudiowpatch as pyaudio
-
         api_key = os.environ.get("BERGET_API_KEY", "")
         if not api_key:
             show_error(
@@ -290,7 +291,6 @@ class TrayApp:
             timeout=60,
             max_retries=0,
         )
-        self.p = pyaudio.PyAudio()
 
         log.info("Ready. Using %s via berget.ai", self.cfg["whisper_model"])
 

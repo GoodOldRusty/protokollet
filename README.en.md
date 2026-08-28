@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.7.1
+**Version:** 1.7.2
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -304,6 +304,23 @@ kept so you can run `retranscribe.py` manually.
 ---
 
 ## Changelog
+
+### v1.7.2 (2026-08-28)
+- Fix: audio devices connected after the app started (e.g. a USB audio
+  interface like the Arturia MiniFuse 2) were invisible, and loopback
+  capture could go completely silent with no error. The app created a
+  single PortAudio session at startup and reused it for every recording —
+  PortAudio only reads the device list once, at that session's creation.
+  Each recording now creates its own session that re-reads the device
+  list, and releases it when the recording ends
+- Fix: exceptions in a capture thread are now logged instead of
+  disappearing silently under `pythonw` (could previously leave a stream
+  empty with no trace in the log)
+- Fix: a failed device lookup no longer creates an empty dated recording
+  folder — the folder is only created once both the mic and loopback
+  device are resolved
+- Fix: an extra click on Start Recording during device initialization no
+  longer starts a second recording session
 
 ### v1.7.1 (2026-06-17)
 - Fix: summarizing long meetings timed out. The LLM call had a 120s limit
