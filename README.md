@@ -3,7 +3,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.7.1
+**Version:** 1.7.2
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -309,6 +309,23 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 ---
 
 ## Ändringslogg
+
+### v1.7.2 (2026-08-28)
+- Fix: ljudenheter som anslöts efter att programmet startat (t.ex. ett
+  USB-ljudkort som Arturia MiniFuse 2) syntes inte, och loopback-
+  inspelningen kunde bli helt tyst utan felmeddelande. Programmet skapade
+  en enda PortAudio-session vid start och återanvände den för varje
+  inspelning — PortAudio läser bara in enhetslistan en gång, vid den
+  sessionens skapande. Varje inspelning skapar nu en egen session som
+  läser om enhetslistan, och den stängs när inspelningen är klar
+- Fix: fel i en inspelningstråd loggas nu i stället för att försvinna
+  tyst under `pythonw` (kunde tidigare göra att en ström blev tom utan
+  spår i loggen)
+- Fix: en misslyckad enhetsupptäckt skapar inte längre en tom mapp med
+  dagens datum — mappen skapas först när både mikrofonen och loopback är
+  klara
+- Fix: ett extra klick på Start Recording under enhetsinitieringen
+  startar inte längre en andra inspelningssession
 
 ### v1.7.1 (2026-06-17)
 - Fix: sammanfattningen av långa möten timade ut. LLM-anropet hade en

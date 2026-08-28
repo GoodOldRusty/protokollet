@@ -74,6 +74,15 @@ parses correctly with `load_env()`.
 |---|------|----------|
 | H1 | Record or resume a meeting whose transcript is long enough that the LLM summary takes more than ~2 minutes | The summary completes (300 s timeout, single retry) and the protokoll is written — no multi-minute hang or repeated-timeout failure like the old 120 s limit produced. |
 
+## I. Audio device hot-plug
+
+| # | Step | Expected |
+|---|------|----------|
+| I1 | With the app already running and idle (grey icon), plug in a USB audio interface (e.g. an Arturia MiniFuse 2) and set it as the default Windows playback and/or recording device | No app restart needed. |
+| I2 | Start Recording | Both the MIC and OTHERS bars on the recording pill move, proving the newly connected device is captured — not just whatever devices were present when the app launched. |
+| I3 | Stop Recording and let it transcribe | Both `mic.wav` and `loopback.wav` contain audio; both streams transcribe successfully. |
+| I4 | Click Start Recording twice in quick succession | Only one recording session starts (the click during device initialization is ignored); no duplicate pill, thread, or error. |
+
 ---
 
 ## Known limitations (by design)
