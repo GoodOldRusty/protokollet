@@ -85,6 +85,19 @@ parses correctly with `load_env()`.
 
 ---
 
+## J. Realtime transcription (v1.9.0)
+
+| # | Step | Expected |
+|---|------|----------|
+| J1 | Tray menu shows "Transcribe: Realtime" / "Transcribe: After meeting" radio items | "After meeting" is selected by default (fresh config). Selecting the other persists across an app restart. |
+| J2 | Select Realtime, record ~1 min with meeting audio playing, speak into the mic, Stop | Protokoll appears within ~15 s of Stop. `recorder.log` shows "Realtime transcript saved - batch transcription skipped". `transkript.md` is a chronological dialogue with alternating `Jan:` / `Others:` lines. |
+| J3 | During a Realtime recording, disconnect the network mid-meeting, reconnect, Stop | Log shows "falling back to batch"; the meeting is transcribed by the normal after-meeting pipeline; nothing is lost. |
+| J4 | Select Realtime, record but stay silent < min_seconds, Stop | Recording discarded as usual; no leftover folder; no hang at stop. |
+| J5 | With Realtime selected while the Settings editor has config.json open mid-edit (temporarily invalid JSON), click the toggle | Toast "Setting applied but not saved"; config.json is NOT overwritten; the mode still applies until restart. |
+| J6 | Compare a Realtime protokoll against a re-run via `python retranscribe.py <folder>` (requires keep_audio true) | Whisper version may be slightly more accurate on domain terms; both are coherent. |
+
+---
+
 ## Known limitations (by design)
 
 - `setup.bat` writes the pasted key verbatim. A key containing cmd special

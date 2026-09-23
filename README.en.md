@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.8.1
+**Version:** 1.9.0
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -304,6 +304,22 @@ kept so you can run `retranscribe.py` manually.
 ---
 
 ## Changelog
+
+### v1.9.0 (2026-09-23)
+- New: realtime transcription during the meeting via Berget's realtime API
+  (Klang's Pianissimo model). The protokoll is ready seconds after Stop
+  instead of minutes later, and the transcript becomes a chronological
+  dialogue instead of two blocks. Toggled in the tray menu: "Transcribe:
+  Realtime" / "Transcribe: After meeting" (off by default; choice persists)
+- Safety net: if the realtime stream fails in any way (network, server
+  error, lost segments) the recording automatically falls back to the
+  regular after-meeting transcription — a realtime failure can never cost
+  a meeting
+- Note: kb-whisper-large is still somewhat more accurate, especially on
+  domain terms (Pianissimo does not use the "prompt" vocabulary). Consider
+  keeping `keep_audio: true` for a while — a protokoll that came out wrong
+  can then be redone with `python retranscribe.py <folder>`
+- Cost: about EUR 0.42 per meeting hour (two streams at EUR 3.50/1000 min)
 
 ### v1.8.1 (2026-09-23)
 - Fix: only one instance of the app can run at a time. Launching the app

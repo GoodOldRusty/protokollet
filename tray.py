@@ -18,6 +18,7 @@ from recorder import (
     find_pending,
     load_config,
     record_meeting,
+    save_config_value,
     transcribe_folder,
 )
 from vu_meter import AudioLevels, VuMeterWindow
@@ -140,6 +141,22 @@ class TrayApp:
     def _open_settings(self):
         from recorder import CONFIG_PATH
         os.startfile(str(CONFIG_PATH))
+
+    def _set_realtime(self, enabled: bool):
+        """Tray toggle: realtime vs after-meeting transcription. Applies from
+        the next recording; persisted so it survives restarts."""
+        self.cfg["realtime_transcription"] = enabled
+        try:
+            if not save_config_value("realtime_transcription", enabled):
+                notify("Setting applied but not saved",
+                       "config.json could not be parsed - the mode\n"
+                       "resets when the app restarts.")
+        except Exception:
+            log.exception("Could not persist transcription mode")
+        log.info("Transcription mode: %s",
+                 "realtime" if enabled else "after meeting")
+        if self.icon:
+            self.icon.update_menu()
 
     def _start_recording(self):
         if self.state.status != RecorderState.IDLE:
@@ -274,6 +291,19 @@ class TrayApp:
                 "Cancel Transcription",
                 lambda item: self._stop_recording(),
                 visible=self._is_transcribing,
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "Transcribe: Realtime",
+                lambda item: self._set_realtime(True),
+                radio=True,
+                checked=lambda item: bool(self.cfg.get("realtime_transcription")),
+            ),
+            pystray.MenuItem(
+                "Transcribe: After meeting",
+                lambda item: self._set_realtime(False),
+                radio=True,
+                checked=lambda item: not self.cfg.get("realtime_transcription"),
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Open Recordings", lambda item: self._open_recordings()),

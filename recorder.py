@@ -51,6 +51,8 @@ DEFAULTS = {
     "min_seconds": 30,
     "output_dir": "~/Recordings",
     "api_base_url": "https://api.berget.ai/v1",
+    "realtime_transcription": False,
+    "realtime_model": "klang/pianissimo",
 }
 
 
@@ -86,6 +88,24 @@ def load_config() -> dict:
     cfg["output_dir"] = Path(cfg["output_dir"]).expanduser()
     return cfg
 
+
+def save_config_value(key: str, value) -> bool:
+    """Persist one key to config.json, leaving all other settings as the
+    user wrote them. Refuses (False) when the file can't be parsed — e.g.
+    mid-edit in the Settings editor — rather than clobber the user's config.
+    Atomic write so a crash can never leave a half-written config."""
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning("Not persisting %s - config.json unreadable: %s", key, e)
+        return False
+    data[key] = value
+    tmp = CONFIG_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=4, ensure_ascii=False),
+                   encoding="utf-8")
+    os.replace(tmp, CONFIG_PATH)
+    return True
+
 # ── Audio constants ───────────────────────────────────────────
 
 SAMPLERATE = 16000
@@ -118,10 +138,12 @@ def record_device(
     stop_event: threading.Event,
     level_callback=None,
     on_failure=None,
+    audio_sink=None,
 ):
     """Record from device into frames[] until stop_event is set.
     Stores channel count as first element for downmix.
-    Calls on_failure(device_name) if capture fails at open or mid-stream."""
+    Calls on_failure(device_name) if capture fails at open or mid-stream.
+    audio_sink, if given, receives every raw chunk (must never raise)."""
     stream = None
     try:
         rate = int(device_info["defaultSampleRate"])
@@ -138,6 +160,8 @@ def record_device(
         while not stop_event.is_set():
             data = stream.read(CHUNK, exception_on_overflow=False)
             frames.append(data)
+            if audio_sink is not None:
+                audio_sink(data)
             if level_callback is not None:
                 samples = np.frombuffer(data, dtype=np.int16)
                 rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2)) / 32768.0
@@ -747,6 +771,8 @@ def _record_meeting_inner(client, cfg, state, stop_recording,
     lb_frames, mic_frames = [], []
     stop = threading.Event()
     lb_thread = mic_thread = None
+    rt_mic = rt_lb = None
+    capture_completed = False
     try:
         try:
             loopback = get_loopback_device(p)
@@ -766,6 +792,32 @@ def _record_meeting_inner(client, cfg, state, stop_recording,
         # litter output_dir with empty folders.
         folder.mkdir(parents=True, exist_ok=True)
 
+        # Realtime fast path: stream both captures to the realtime API during
+        # the meeting so the transcript is ready at Stop. Any failure falls
+        # back to the batch pipeline below - never a lost meeting.
+        if cfg.get("realtime_transcription") and cfg.get("language") == "sv":
+            try:
+                from realtime import RealtimeTranscriber
+                rt_key = os.environ.get("BERGET_API_KEY", "")
+                rt_lb = RealtimeTranscriber(
+                    rt_key, cfg["realtime_model"], "sv",
+                    int(loopback["defaultSampleRate"]),
+                    max(1, int(loopback["maxInputChannels"])), "loopback")
+                rt_mic = RealtimeTranscriber(
+                    rt_key, cfg["realtime_model"], "sv",
+                    int(mic["defaultSampleRate"]),
+                    max(1, int(mic["maxInputChannels"])), "mic")
+                rt_lb.start()
+                rt_mic.start()
+                log.info("Realtime transcription enabled (%s)",
+                         cfg["realtime_model"])
+            except Exception:
+                log.exception("Realtime transcription unavailable - batch only")
+                for rt in (rt_mic, rt_lb):
+                    if rt is not None:
+                        rt.abort()
+                rt_mic = rt_lb = None
+
         lb_level_cb = audio_levels.update_loopback if audio_levels else None
         mic_level_cb = audio_levels.update_mic if audio_levels else None
 
@@ -777,13 +829,15 @@ def _record_meeting_inner(client, cfg, state, stop_recording,
         lb_thread = threading.Thread(
             target=record_device,
             args=(p, loopback, lb_frames, stop),
-            kwargs={"level_callback": lb_level_cb, "on_failure": lb_fail_cb},
+            kwargs={"level_callback": lb_level_cb, "on_failure": lb_fail_cb,
+                    "audio_sink": rt_lb.feed if rt_lb else None},
             daemon=True,
         )
         mic_thread = threading.Thread(
             target=record_device,
             args=(p, mic, mic_frames, stop),
-            kwargs={"level_callback": mic_level_cb, "on_failure": mic_fail_cb},
+            kwargs={"level_callback": mic_level_cb, "on_failure": mic_fail_cb,
+                    "audio_sink": rt_mic.feed if rt_mic else None},
             daemon=True,
         )
 
@@ -799,6 +853,7 @@ def _record_meeting_inner(client, cfg, state, stop_recording,
         # Saving a long recording can take minutes; without this the icon stays
         # red and users click Stop again, which used to cancel transcription.
         state.set(RecorderState.TRANSCRIBING)
+        capture_completed = True
     finally:
         # Runs on every exit, including exceptions unwinding to
         # record_meeting's handler: stop the capture threads and release the
@@ -813,6 +868,44 @@ def _record_meeting_inner(client, cfg, state, stop_recording,
             log.warning("Capture thread still busy - leaving audio session open")
         else:
             p.terminate()
+        if not capture_completed:
+            # Exception is unwinding: close realtime sockets without waiting.
+            for rt in (rt_mic, rt_lb):
+                if rt is not None:
+                    rt.abort()
+
+    # Collect the realtime transcripts (capture threads have joined, so no
+    # more audio is being fed). None from either stream means fall back.
+    # Stopped in parallel: each stop can wait up to its timeout for finals.
+    rt_transcript = None
+    if rt_mic is not None and rt_lb is not None:
+        rt_results = {}
+        stoppers = [threading.Thread(target=lambda r=rt, k=key:
+                                     rt_results.update({k: r.stop()}),
+                                     daemon=True)
+                    for key, rt in (("mic", rt_mic), ("lb", rt_lb))]
+        for t in stoppers:
+            t.start()
+        for t in stoppers:
+            t.join(timeout=15)
+        mic_segs = rt_results.get("mic")
+        lb_segs = rt_results.get("lb")
+        if mic_segs is not None and lb_segs is not None:
+            from realtime import merge_segments
+            rt_transcript = merge_segments(mic_segs, lb_segs,
+                                           cfg.get("my_name", "Me"))
+            log.info("Realtime transcript ready (%d chars, %d + %d segments)",
+                     len(rt_transcript), len(mic_segs), len(lb_segs))
+
+    if rt_transcript:
+        # Durable before the (minutes-long) WAV save: if saving crashes, the
+        # marker + transcript pair still lets the next app start resume with
+        # a summary-only pass instead of losing the meeting. transcribe_folder
+        # sees the transcript and skips batch transcription entirely.
+        (folder / PENDING_MARKER).touch()
+        (folder / TRANSCRIPT_FILENAME).write_text(rt_transcript + "\n",
+                                                  encoding="utf-8")
+        log.info("Realtime transcript saved - batch transcription skipped")
 
     lb_rate = int(loopback["defaultSampleRate"])
     mic_rate = int(mic["defaultSampleRate"])

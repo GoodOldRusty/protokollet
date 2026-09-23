@@ -1,6 +1,6 @@
 # protokollet — PRD
 
-Current as of v1.8.1 (2026-09-23). Formerly "Meeting Recorder"; renamed
+Current as of v1.9.0 (2026-09-23). Formerly "Meeting Recorder"; renamed
 for public release. Feature history lives in the README changelog.
 
 ## Overview
@@ -160,6 +160,32 @@ next start redoes only the missing step.**
 - Bilingual docs: `README.md` (Swedish, default view) + `README.en.md`
   (English twin), cross-linked; MIT license; distributed via GitHub
   (`GoodOldRusty/protokollet`, public release planned)
+
+### FB9 — Realtime transcription fast path (v1.9.0)
+
+Optional: both capture streams are also streamed live to Berget's
+OpenAI-compatible realtime WebSocket (`klang/pianissimo`, 24 kHz mono
+PCM), so the transcript exists the moment recording stops — protokoll in
+seconds instead of minutes, and as a chronological dialogue (segments
+timestamped at speech end, merged across streams) instead of two blocks.
+
+- Tray radio toggle "Transcribe: Realtime / After meeting"; persisted to
+  config.json (`realtime_transcription`, default false); applies from the
+  next recording; auto-disabled when `language` is not `sv`
+- `realtime.py`: one `RealtimeTranscriber` per stream; sender/receiver
+  threads; a queue decouples the capture loop from network jitter
+- Fallback invariant: any failure — connect, mid-meeting drop, backlog,
+  server error, missing final ack — flips `failed`, the realtime result is
+  discarded, and the unchanged batch pipeline (FB3/FB7) processes the
+  saved WAVs. A realtime problem can never lose a meeting
+- The final buffer commit must be acknowledged by the server before the
+  result counts as complete, so a stop right after the last utterance
+  cannot silently truncate the meeting tail
+- On success the transcript + pending marker are written before the WAV
+  save, so even a crash during saving leaves a summary-only resume
+- Accuracy note: kb-whisper-large remains slightly more accurate and uses
+  the `prompt` vocabulary; Pianissimo does not. Trial advice: keep_audio
+  true so `retranscribe.py` can redo any protokoll with whisper
 
 ---
 

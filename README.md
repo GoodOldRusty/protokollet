@@ -3,7 +3,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.8.1
+**Version:** 1.9.0
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -309,6 +309,22 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 ---
 
 ## Ändringslogg
+
+### v1.9.0 (2026-09-23)
+- Ny funktion: realtidstranskribering under mötet via Bergets realtids-API
+  (Klangs Pianissimo-modell). Protokollet är klart sekunder efter Stop i
+  stället för efter flera minuter, och transkriptet blir en kronologisk
+  dialog i stället för två block. Växlas i fältmenyn: "Transcribe:
+  Realtime" / "Transcribe: After meeting" (av som standard; valet sparas)
+- Säkerhetsnät: misslyckas realtidsströmmen på något sätt (nätverk,
+  serverfel, tappade segment) faller inspelningen automatiskt tillbaka
+  till den vanliga transkriberingen efter mötet — ett realtidsfel kan
+  aldrig kosta ett möte
+- Obs: kb-whisper-large är fortfarande något noggrannare, särskilt på
+  facktermer (Pianissimo använder inte ordlistan i "prompt"). Behåll
+  gärna `keep_audio: true` en period — då kan ett protokoll som blivit
+  fel göras om med `python retranscribe.py <mapp>`
+- Kostnad: ca 0,42 EUR per mötestimme (två strömmar à 3,50 EUR/1000 min)
 
 ### v1.8.1 (2026-09-23)
 - Fix: bara en instans av appen kan köras åt gången. Att starta appen
