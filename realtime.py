@@ -104,7 +104,15 @@ class RealtimeTranscriber:
             time.sleep(0.2)
         else:
             if not self.failed:
-                self._fail("timed out waiting for final transcripts")
+                sender_alive = (self._sender is not None
+                                and self._sender.is_alive())
+                self._fail(
+                    "timed out waiting for final transcripts (sender_alive="
+                    f"{sender_alive}, commit_sent={self._commit_sent}, "
+                    f"final_acked={self._final_acked}, "
+                    f"committed={len(self._committed)}, "
+                    f"completed={len(self._completed)}, "
+                    f"segments={len(self._segments)})")
 
         try:
             self._ws.close()
