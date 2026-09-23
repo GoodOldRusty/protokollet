@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.7.2
+**Version:** 1.8.0
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -304,6 +304,16 @@ kept so you can run `retranscribe.py` manually.
 ---
 
 ## Changelog
+
+### v1.8.0 (2026-09-23)
+- New: a Windows toast notification is shown when an audio stream cannot
+  be captured (e.g. when loopback from a monitor's display audio dies
+  with "Unanticipated host error"). Previously the failure was only
+  visible in `recorder.log` and the meeting was recorded with a single
+  stream without the user noticing
+- No notification is shown if the device dies during the stop itself —
+  the meeting is already fully captured at that point
+- New unit tests for capture failures (`tests/test_capture_failure.py`)
 
 ### v1.7.2 (2026-08-28)
 - Fix: audio devices connected after the app started (e.g. a USB audio

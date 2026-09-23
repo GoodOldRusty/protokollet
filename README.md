@@ -3,7 +3,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.7.2
+**Version:** 1.8.0
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -309,6 +309,16 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 ---
 
 ## Ändringslogg
+
+### v1.8.0 (2026-09-23)
+- Ny funktion: en Windows-avisering visas när en ljudström inte kan
+  spelas in (t.ex. när loopback från en bildskärms ljudutgång dör med
+  "Unanticipated host error"). Tidigare syntes felet bara i
+  `recorder.log` och mötet spelades in med bara ena strömmen utan att
+  användaren märkte något
+- Ingen avisering visas om enheten dör under själva stoppet — mötet är
+  då redan färdiginspelat
+- Nya enhetstester för inspelningsfel (`tests/test_capture_failure.py`)
 
 ### v1.7.2 (2026-08-28)
 - Fix: ljudenheter som anslöts efter att programmet startat (t.ex. ett

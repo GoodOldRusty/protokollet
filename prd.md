@@ -1,6 +1,6 @@
 # protokollet — PRD
 
-Current as of v1.7.2 (2026-08-28). Formerly "Meeting Recorder"; renamed
+Current as of v1.8.0 (2026-09-23). Formerly "Meeting Recorder"; renamed
 for public release. Feature history lives in the README changelog.
 
 ## Overview
@@ -112,7 +112,10 @@ orange (waiting for connection — transcription queued). Tooltip shows
 Menu: status label, Start/Stop Recording, Cancel Transcription (also
 available in the orange state), Open Recordings, Settings…, Quit.
 Windows toasts narrate every outcome: saved, failed (audio kept),
-offline (will auto-resume), back online, resuming unfinished recordings.
+offline (will auto-resume), back online, resuming unfinished recordings,
+and a capture stream (mic or system audio) failing during a recording —
+worded per stream so it stays true even if both fail, and suppressed
+when the device dies during the stop itself (meeting already captured).
 Start Recording is ignored while a session is already initializing (a
 brief per-session device setup precedes the icon turning red), so a
 second click cannot spawn a second session.
