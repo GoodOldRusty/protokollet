@@ -3,7 +3,7 @@
 
 *Read this in [English](README.en.md).*
 
-**Version:** 1.8.0
+**Version:** 1.8.1
 **Författare:** Jan Soja
 **Skapad:** 2026-03-26
 
@@ -309,6 +309,12 @@ transkriberas aldrig automatiskt, men ljudet behålls så att du kan köra
 ---
 
 ## Ändringslogg
+
+### v1.8.1 (2026-09-23)
+- Fix: bara en instans av appen kan köras åt gången. Att starta appen
+  när den redan kör (t.ex. manuellt fast autostarten redan dragit igång
+  den) visar nu en avisering och avslutar, i stället för att skapa en
+  andra fältikon som konkurrerar om ljudenheterna
 
 ### v1.8.0 (2026-09-23)
 - Ny funktion: en Windows-avisering visas när en ljudström inte kan

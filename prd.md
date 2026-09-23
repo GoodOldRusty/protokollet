@@ -1,6 +1,6 @@
 # protokollet — PRD
 
-Current as of v1.8.0 (2026-09-23). Formerly "Meeting Recorder"; renamed
+Current as of v1.8.1 (2026-09-23). Formerly "Meeting Recorder"; renamed
 for public release. Feature history lives in the README changelog.
 
 ## Overview
@@ -118,7 +118,9 @@ worded per stream so it stays true even if both fail, and suppressed
 when the device dies during the stop itself (meeting already captured).
 Start Recording is ignored while a session is already initializing (a
 brief per-session device setup precedes the icon turning red), so a
-second click cannot spawn a second session.
+second click cannot spawn a second session. The app itself is
+single-instance: a named Windows mutex (freed by the OS on process
+death, so never stale) makes a second launch show a toast and exit.
 
 ### FB6 — Recording pill
 

@@ -4,7 +4,7 @@
 
 *Läs detta på [svenska](README.md).*
 
-**Version:** 1.8.0
+**Version:** 1.8.1
 **Author:** Jan Soja
 **Created:** 2026-03-26
 
@@ -304,6 +304,12 @@ kept so you can run `retranscribe.py` manually.
 ---
 
 ## Changelog
+
+### v1.8.1 (2026-09-23)
+- Fix: only one instance of the app can run at a time. Launching the app
+  while it is already running (e.g. manually when autostart already
+  launched it) now shows a notification and exits, instead of creating a
+  second tray icon competing for the audio devices
 
 ### v1.8.0 (2026-09-23)
 - New: a Windows toast notification is shown when an audio stream cannot

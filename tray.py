@@ -72,6 +72,19 @@ def notify(title: str, message: str):
         log.debug("Toast notification failed", exc_info=True)
 
 
+def already_running() -> bool:
+    """True if another instance already holds the app mutex.
+
+    The mutex handle is deliberately never closed — holding it for the
+    process lifetime IS the guard. The OS frees it when the process dies,
+    so a crash can't leave a stale lock (unlike a lock file)."""
+    import ctypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW(None, False, "Local\\MeetingRecorderTray")
+    ERROR_ALREADY_EXISTS = 183
+    return ctypes.get_last_error() == ERROR_ALREADY_EXISTS
+
+
 def show_error(title: str, message: str):
     """Show a blocking error dialog. The app runs under pythonw (no console),
     so a silent log would leave a first-time user with no feedback at all."""
@@ -339,5 +352,9 @@ class TrayApp:
 
 
 if __name__ == "__main__":
-    app = TrayApp()
-    app.run()
+    if already_running():
+        notify("Meeting Recorder is already running",
+               "Look for the icon in the system tray.")
+    else:
+        app = TrayApp()
+        app.run()
