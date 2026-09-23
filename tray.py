@@ -148,7 +148,8 @@ class TrayApp:
             kwargs={"audio_levels": self.audio_levels,
                     "on_error": self._on_transcription_failed,
                     "on_offline": self._on_offline,
-                    "on_online": self._on_online},
+                    "on_online": self._on_online,
+                    "on_capture_failed": self._on_capture_failed},
             daemon=True,
         )
         self.recording_thread.start()
@@ -175,6 +176,15 @@ class TrayApp:
 
     def _on_transcript(self, path: str):
         notify("Meeting recorded", f"Meeting notes saved:\n{Path(path).name}")
+
+    def _on_capture_failed(self, stream: str, device: str):
+        # Worded per stream: if both streams fail, each toast stays true —
+        # "the other stream is fine" would not be.
+        notify(
+            f"No {stream} is being recorded",
+            f"Capture from {device} failed.\n"
+            "This meeting is being recorded without it.",
+        )
 
     def _on_transcription_failed(self, folder: str):
         notify(

@@ -117,9 +117,11 @@ def record_device(
     frames: list,
     stop_event: threading.Event,
     level_callback=None,
+    on_failure=None,
 ):
     """Record from device into frames[] until stop_event is set.
-    Stores channel count as first element for downmix."""
+    Stores channel count as first element for downmix.
+    Calls on_failure(device_name) if capture fails at open or mid-stream."""
     stream = None
     try:
         rate = int(device_info["defaultSampleRate"])
@@ -145,6 +147,10 @@ def record_device(
         # and the stream just comes out silently empty.
         log.exception("Capture failed for %s",
                       device_info.get("name", "unknown device"))
+        # No alarm when the device dies during stop/teardown: the meeting is
+        # already fully captured and the user is done recording.
+        if on_failure is not None and not stop_event.is_set():
+            on_failure(device_info.get("name", "unknown device"))
     finally:
         # Zero the VU bar so a dead stream doesn't freeze at its last level.
         if level_callback is not None:
@@ -705,7 +711,7 @@ def record_meeting(client: OpenAI, cfg: dict,
                    state: RecorderState,
                    stop_recording: threading.Event,
                    on_transcript=None, audio_levels=None, on_error=None,
-                   on_offline=None, on_online=None):
+                   on_offline=None, on_online=None, on_capture_failed=None):
     """
     Record until stop_recording is set. Transcribe and save.
     Runs in a background thread.
@@ -713,7 +719,7 @@ def record_meeting(client: OpenAI, cfg: dict,
     try:
         _record_meeting_inner(client, cfg, state, stop_recording,
                               on_transcript, audio_levels, on_error,
-                              on_offline, on_online)
+                              on_offline, on_online, on_capture_failed)
     except Exception:
         log.exception("record_meeting crashed")
         state.set(RecorderState.IDLE)
@@ -721,7 +727,7 @@ def record_meeting(client: OpenAI, cfg: dict,
 
 def _record_meeting_inner(client, cfg, state, stop_recording,
                           on_transcript, audio_levels, on_error,
-                          on_offline, on_online):
+                          on_offline, on_online, on_capture_failed=None):
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     folder = cfg["output_dir"] / ts
     if folder.exists():
@@ -763,16 +769,21 @@ def _record_meeting_inner(client, cfg, state, stop_recording,
         lb_level_cb = audio_levels.update_loopback if audio_levels else None
         mic_level_cb = audio_levels.update_mic if audio_levels else None
 
+        lb_fail_cb = mic_fail_cb = None
+        if on_capture_failed is not None:
+            lb_fail_cb = lambda name: on_capture_failed("system audio", name)
+            mic_fail_cb = lambda name: on_capture_failed("microphone", name)
+
         lb_thread = threading.Thread(
             target=record_device,
             args=(p, loopback, lb_frames, stop),
-            kwargs={"level_callback": lb_level_cb},
+            kwargs={"level_callback": lb_level_cb, "on_failure": lb_fail_cb},
             daemon=True,
         )
         mic_thread = threading.Thread(
             target=record_device,
             args=(p, mic, mic_frames, stop),
-            kwargs={"level_callback": mic_level_cb},
+            kwargs={"level_callback": mic_level_cb, "on_failure": mic_fail_cb},
             daemon=True,
         )
 
